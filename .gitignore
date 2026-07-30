@@ -1,0 +1,16 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+node_modules/
+dist/
+build/
+.vite/
+*.db
+*.sqlite
+*.sqlite3
+netaudit.db*
+.env
+.DS_Store
