@@ -1,0 +1,62 @@
+{
+  "id": "cis_win11",
+  "label": "CIS Microsoft Windows 11 Benchmark v3.0.0",
+  "coverage_note": "Deliberately narrow. CIS Windows Benchmark sub-section numbering has shifted across published revisions (v1.x through v5.x were compared for this mapping), so only the 11 controls below -- each cross-checked against multiple independently published excerpts of the benchmark and found to be stable across versions -- are included. They cover 7 of NetAudit's 43 posture checks: SMB signing, UAC admin approval mode, Windows Firewall state/inbound-block/logging (all three profiles), LLMNR, and IPv6. The remaining 36 checks (SMB1, guest/blank-password/autologon account hygiene, TLS/SCHANNEL protocol and cipher settings, WPAD/NetBIOS/mDNS/DNS-over-HTTPS, remote access services, Wi-Fi, listening services, BitLocker, Defender, Windows Update, broad firewall allow-rules) were deliberately left unmapped rather than assigned a guessed sub-section identifier -- see the package README for the confidence notes behind each entry. 18.6.19.2.1 is a Level 2 (not Level 1) recommendation; NetAudit does not distinguish benchmark levels in its output. This is an indicative technical mapping, not a CIS-certified crosswalk, and covers only the network-facing subset of the benchmark a single host audit can observe.",
+  "controls": [
+    {
+      "control_id": "2.3.9.2",
+      "title": "Microsoft network server: Digitally sign communications (always)",
+      "check_ids": ["smb_signing_required"]
+    },
+    {
+      "control_id": "2.3.17.6",
+      "title": "User Account Control: Run all administrators in Admin Approval Mode",
+      "check_ids": ["uac_enabled"]
+    },
+    {
+      "control_id": "9.1.1",
+      "title": "Windows Firewall: Domain: Firewall state",
+      "check_ids": ["firewall_profiles_enabled"]
+    },
+    {
+      "control_id": "9.2.1",
+      "title": "Windows Firewall: Private: Firewall state",
+      "check_ids": ["firewall_profiles_enabled"]
+    },
+    {
+      "control_id": "9.3.1",
+      "title": "Windows Firewall: Public: Firewall state",
+      "check_ids": ["firewall_profiles_enabled"]
+    },
+    {
+      "control_id": "9.1.2",
+      "title": "Windows Firewall: Domain: Inbound connections (Block)",
+      "check_ids": ["firewall_inbound_default_block"]
+    },
+    {
+      "control_id": "9.2.2",
+      "title": "Windows Firewall: Private: Inbound connections (Block)",
+      "check_ids": ["firewall_inbound_default_block"]
+    },
+    {
+      "control_id": "9.3.2",
+      "title": "Windows Firewall: Public: Inbound connections (Block)",
+      "check_ids": ["firewall_inbound_default_block"]
+    },
+    {
+      "control_id": "9.1.9",
+      "title": "Windows Firewall: Domain: Logging: Log dropped packets",
+      "check_ids": ["firewall_logging_enabled"]
+    },
+    {
+      "control_id": "18.6.4.4",
+      "title": "Turn off multicast name resolution (LLMNR)",
+      "check_ids": ["llmnr_disabled"]
+    },
+    {
+      "control_id": "18.6.19.2.1",
+      "title": "Disable IPv6 (Ensure TCPIP6 Parameter 'DisabledComponents' is set to '0xff (255)')",
+      "check_ids": ["ipv6_state"]
+    }
+  ]
+}

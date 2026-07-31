@@ -158,12 +158,31 @@ class _Parser:
                 break
         return node
 
+    _PRIMARY_START_KEYWORDS = {"tcp", "udp", "icmp", "port", "host", "net", "src", "dst", "not"}
+
+    def _starts_primary(self, tok: Optional[Token]) -> bool:
+        if tok is None:
+            return False
+        if tok.kind == "lparen":
+            return True
+        if tok.kind == "word" and tok.value.lower() in self._PRIMARY_START_KEYWORDS:
+            return True
+        return False
+
     def _and_expr(self) -> Node:
+        # Real BPF/tcpdump syntax ANDs consecutive terms by simple
+        # juxtaposition -- "tcp port 443" means "tcp and port 443" with no
+        # explicit 'and' required (the API contract's own example,
+        # "tcp port 443 or udp port 53", relies on exactly this). An
+        # explicit 'and' is also accepted and behaves identically.
         node = self._unary()
         while True:
             tok = self._peek()
             if tok is not None and tok.kind == "word" and tok.value.lower() == "and":
                 self._advance()
+                right = self._unary()
+                node = BoolOp("and", node, right)
+            elif self._starts_primary(tok):
                 right = self._unary()
                 node = BoolOp("and", node, right)
             else:

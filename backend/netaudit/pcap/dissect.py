@@ -27,6 +27,40 @@ def _tcp_flags_str(bits: int) -> str:
     return ",".join(name for mask, name in _TCP_FLAG_NAMES if bits & mask)
 
 
+LINKTYPE_ETHERNET = 1
+LINKTYPE_RAW = 101
+
+
+def dissect_frame(linktype: int, data: bytes) -> dict:
+    """Dispatches on pcap linktype. Ethernet is dissected normally; RAW
+    (no L2 header, straight to IP) is handled directly; anything else
+    yields protocol "other" rather than guessing at a layout we don't
+    know."""
+    if linktype == LINKTYPE_ETHERNET:
+        return dissect_ethernet(data)
+    if linktype == LINKTYPE_RAW:
+        return dissect_raw_ip(data)
+    return {
+        "protocol": "other", "src_addr": None, "src_port": None,
+        "dst_addr": None, "dst_port": None, "flags": None,
+    }
+
+
+def dissect_raw_ip(data: bytes) -> dict:
+    result: dict = {
+        "protocol": "other", "src_addr": None, "src_port": None,
+        "dst_addr": None, "dst_port": None, "flags": None,
+    }
+    if not data:
+        return result
+    version = (data[0] >> 4) & 0x0F
+    if version == 4:
+        _dissect_ipv4(data, result)
+    elif version == 6:
+        _dissect_ipv6(data, result)
+    return result
+
+
 def dissect_ethernet(data: bytes) -> dict:
     """Best-effort extraction from a captured Ethernet frame. Returns a
     dict with whatever it could determine; always includes at least

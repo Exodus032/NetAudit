@@ -1,0 +1,111 @@
+{
+  "id": "nist_800_53",
+  "label": "NIST SP 800-53 Rev. 5",
+  "coverage_note": "Indicative mapping only, not a NIST-endorsed crosswalk. All 43 posture checks are grouped under 18 SP 800-53 Rev. 5 controls across the AC, AU, CM, IA, SC and SI families -- control IDs and titles are the stable, canonical Rev. 5 catalogue entries, not version-sensitive the way CIS sub-section numbers are. A single host-level, network-facing configuration check is rarely sufficient on its own to fully satisfy a control that in a real ATO also requires organizational policy, procedural, and multi-system evidence NetAudit cannot see. Treat 'pass' here as 'the narrow technical signal this tool can observe was favorable', not 'the control is fully satisfied'.",
+  "controls": [
+    {
+      "control_id": "AC-2",
+      "title": "Account Management",
+      "check_ids": ["guest_account_disabled"]
+    },
+    {
+      "control_id": "AC-3",
+      "title": "Access Enforcement",
+      "check_ids": ["smb_shares_exposed"]
+    },
+    {
+      "control_id": "AC-6",
+      "title": "Least Privilege",
+      "check_ids": ["uac_enabled", "local_admin_count"]
+    },
+    {
+      "control_id": "AC-17",
+      "title": "Remote Access",
+      "check_ids": ["rdp_disabled_or_nla", "winrm_exposure", "remote_registry_disabled", "psremoting_scope"]
+    },
+    {
+      "control_id": "AC-18",
+      "title": "Wireless Access",
+      "check_ids": ["wifi_encryption_strength", "wifi_open_networks_saved", "wifi_autoconnect_open"]
+    },
+    {
+      "control_id": "AU-12",
+      "title": "Audit Record Generation",
+      "check_ids": ["firewall_logging_enabled"]
+    },
+    {
+      "control_id": "CM-7",
+      "title": "Least Functionality",
+      "check_ids": [
+        "smb1_disabled",
+        "llmnr_disabled",
+        "netbios_disabled",
+        "mdns_exposure",
+        "wpad_disabled",
+        "ipv6_state",
+        "ip_forwarding_disabled",
+        "promiscuous_adapters",
+        "unused_adapters_enabled",
+        "listening_on_all_interfaces",
+        "high_risk_ports_open",
+        "unexpected_listeners",
+        "upnp_disabled"
+      ]
+    },
+    {
+      "control_id": "IA-2",
+      "title": "Identification and Authentication (Organizational Users)",
+      "check_ids": ["smb_guest_auth_disabled"]
+    },
+    {
+      "control_id": "IA-5",
+      "title": "Authenticator Management",
+      "check_ids": ["blank_passwords", "autologon_disabled"]
+    },
+    {
+      "control_id": "SC-7",
+      "title": "Boundary Protection",
+      "check_ids": ["firewall_profiles_enabled", "firewall_inbound_default_block", "firewall_allow_rules_broad", "network_profile_public"]
+    },
+    {
+      "control_id": "SC-8",
+      "title": "Transmission Confidentiality and Integrity",
+      "check_ids": ["smb_signing_required", "tls10_11_disabled", "ssl3_disabled"]
+    },
+    {
+      "control_id": "SC-13",
+      "title": "Cryptographic Protection",
+      "check_ids": ["weak_ciphers_disabled"]
+    },
+    {
+      "control_id": "SC-17",
+      "title": "Public Key Infrastructure Certificates",
+      "check_ids": ["certificate_store_anomalies"]
+    },
+    {
+      "control_id": "SC-20",
+      "title": "Secure Name/Address Resolution Service (Authoritative Source)",
+      "check_ids": ["dns_over_https"]
+    },
+    {
+      "control_id": "SC-21",
+      "title": "Secure Name/Address Resolution Service (Recursive or Caching Resolver)",
+      "check_ids": ["dns_servers_trusted"]
+    },
+    {
+      "control_id": "SC-28",
+      "title": "Protection of Information at Rest",
+      "check_ids": ["bitlocker_status"]
+    },
+    {
+      "control_id": "SI-2",
+      "title": "Flaw Remediation",
+      "check_ids": ["windows_update_current"]
+    },
+    {
+      "control_id": "SI-3",
+      "title": "Malicious Code Protection",
+      "check_ids": ["defender_realtime_enabled", "defender_signatures_current"]
+    }
+  ]
+}

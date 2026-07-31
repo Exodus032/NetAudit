@@ -46,6 +46,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from . import arpscan, config, netinfo
+from .learn.router import router as learn_router
 from .posture import PostureService
 from .posture.router import router as posture_router
 from .posture.service import get_posture_service
@@ -471,6 +472,79 @@ class HygieneScoreContributor:
         return max(0, min(100, score))
 
 
+class LiveFindingsProvider:
+    """Feeds `/api/findings/prioritised` from the three live sources.
+
+    Only actual findings cross this boundary: a posture check that passed,
+    errored or was skipped is not something to fix, and a resolved threat is
+    not something to act on. Filtering here rather than in the learn package
+    keeps that package free of any knowledge of the other three.
+    """
+
+    def __init__(self, posture_service, engine: ThreatEngine, db_path: Path) -> None:
+        self._posture = posture_service
+        self._engine = engine
+        self._db_path = db_path
+
+    def posture_checks(self) -> list[dict]:
+        try:
+            report = self._posture.get_report()
+        except Exception:
+            logger.debug("posture findings unavailable", exc_info=True)
+            return []
+        out = []
+        for check in getattr(report, "checks", []):
+            status = getattr(check.status, "value", check.status)
+            if status not in ("fail", "warn"):
+                continue
+            remediation = getattr(check, "remediation", None)
+            out.append({
+                "id": check.id,
+                "title": check.title,
+                "severity": getattr(check.severity, "value", check.severity),
+                "status": status,
+                "one_line_fix": getattr(remediation, "summary", None) or "See the check detail for remediation steps.",
+            })
+        return out
+
+    def recommendations(self) -> list[dict]:
+        try:
+            from .rules import engine as rules_engine
+
+            recs = rules_engine.list_recommendations(db_path=self._db_path)
+        except Exception:
+            logger.debug("recommendation findings unavailable", exc_info=True)
+            return []
+        return [
+            {
+                "id": rec["id"],
+                "title": rec["title"],
+                "severity": rec["severity"],
+                "one_line_fix": (rec.get("actions") or [{}])[0].get("label")
+                or "See the recommendation detail.",
+            }
+            for rec in recs
+        ]
+
+    def threats(self) -> list[dict]:
+        try:
+            _total, threats = self._engine.list_threats(include_acknowledged=False, limit=1000)
+        except Exception:
+            logger.debug("threat findings unavailable", exc_info=True)
+            return []
+        return [
+            {
+                "id": t["id"],
+                "title": t["title"],
+                "severity": t["severity"],
+                "one_line_fix": (t.get("recommended_actions") or [{}])[0].get("label")
+                or "Investigate before taking action.",
+            }
+            for t in threats
+            if t.get("status") != "resolved"
+        ]
+
+
 def wire_security(app, db_path: Optional[Path] = None, start_background: bool = True) -> None:
     """Mount the posture and threat routers and give them live dependencies.
 
@@ -505,10 +579,13 @@ def wire_security(app, db_path: Optional[Path] = None, start_background: bool = 
     app.state.threat_scheduler = scheduler
     app.state.posture_service = posture_service
 
+    app.state.learn_findings_provider = LiveFindingsProvider(posture_service, engine, db_path)
+
     app.dependency_overrides[get_posture_service] = lambda: posture_service
 
     app.include_router(posture_router)
     app.include_router(threat_router)
+    app.include_router(learn_router)
 
     if start_background:
         arp_observer.start()

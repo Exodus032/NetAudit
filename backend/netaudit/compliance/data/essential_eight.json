@@ -1,0 +1,47 @@
+{
+  "id": "essential_eight",
+  "label": "ACSC Essential Eight",
+  "coverage_note": "ACSC publishes eight named mitigation strategies, not numbered controls, so control_id below is a stable slug of the strategy name rather than an invented identifier. Only 'Patch Operating Systems' and 'Restrict Administrative Privileges' have any host-level, network-facing signal this tool can observe -- and only partially even then (e.g. 'Patch Operating Systems' here means only 'the OS reported a successful update install timestamp', not patch currency against a specific CVE or SLA target, and says nothing about maturity level). The other six strategies -- Patch Applications, Multi-factor Authentication, Application Control, Restrict Microsoft Office Macro Settings, User Application Hardening, Regular Backups -- are completely outside what a single host's network-facing configuration audit can see. They are listed with no mapped checks and are always not_assessed here; that is a statement about this tool's vantage point, not a finding that they are failing.",
+  "controls": [
+    {
+      "control_id": "patch_operating_systems",
+      "title": "Patch Operating Systems",
+      "check_ids": ["windows_update_current"]
+    },
+    {
+      "control_id": "patch_applications",
+      "title": "Patch Applications",
+      "check_ids": []
+    },
+    {
+      "control_id": "multi_factor_authentication",
+      "title": "Multi-factor Authentication",
+      "check_ids": []
+    },
+    {
+      "control_id": "restrict_administrative_privileges",
+      "title": "Restrict Administrative Privileges",
+      "check_ids": ["guest_account_disabled", "local_admin_count", "blank_passwords", "autologon_disabled", "uac_enabled"]
+    },
+    {
+      "control_id": "application_control",
+      "title": "Application Control",
+      "check_ids": []
+    },
+    {
+      "control_id": "restrict_office_macros",
+      "title": "Restrict Microsoft Office Macro Settings",
+      "check_ids": []
+    },
+    {
+      "control_id": "user_application_hardening",
+      "title": "User Application Hardening",
+      "check_ids": []
+    },
+    {
+      "control_id": "regular_backups",
+      "title": "Regular Backups",
+      "check_ids": []
+    }
+  ]
+}

@@ -399,6 +399,10 @@ class TestWiredApp:
         "/api/security/score",
         "/api/threats",
         "/api/threats/detectors",
+        "/api/glossary",
+        "/api/tour",
+        "/api/lessons",
+        "/api/findings/prioritised",
     ])
     def test_v2_routes_are_reachable_after_late_mounting(self, client, path):
         assert client.get(path).status_code == 200
@@ -418,6 +422,24 @@ class TestWiredApp:
         ids = {c["id"] for c in body["components"]}
         assert ids == {"posture", "threats", "hygiene"}
         assert 0 <= body["overall"] <= 100
+
+    def test_prioritised_findings_draw_from_the_live_sources(self, client):
+        """The provider must return real findings, not the package's static
+        fallback -- and must exclude passing checks and resolved threats."""
+        body = client.get("/api/findings/prioritised").json()
+        assert "items" in body
+        for item in body["items"]:
+            assert item["source"] in {"posture", "recommendation", "threat"}
+            assert item["severity"] in {"critical", "high", "medium", "low", "info"}
+            assert item["why_first"]
+        ranks = [i["priority_rank"] for i in body["items"]]
+        assert ranks == sorted(ranks), "items must arrive already ranked"
+
+    def test_explain_covers_a_real_detector(self, client):
+        body = client.get("/api/explain/detector/c2_beaconing").json()
+        assert body["id"] == "c2_beaconing"
+        assert body["plain"]
+        assert body["what_would_make_it_wrong"]
 
     def test_v1_routes_still_work_alongside_the_new_ones(self, client):
         assert client.get("/api/health").status_code == 200
