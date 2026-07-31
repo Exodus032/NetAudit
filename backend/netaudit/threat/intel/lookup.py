@@ -53,14 +53,28 @@ class LookupResult:
     reputation: Reputation = "unknown"
 
 
+# True RFC1918 private-use ranges only. Python's `ipaddress.is_private`
+# is deliberately broader than this -- it also covers loopback, link-local,
+# and the documentation/TEST-NET ranges (RFC 5737), which are "not globally
+# routable" but are not "somebody's LAN" and must not read as a clean,
+# nothing-to-see-here private address (traffic to a TEST-NET address on the
+# wire is itself unusual, not routine).
+_PRIVATE_NETWORKS = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+]
+
+
 def classify_ip(value: str) -> Classification:
     try:
         addr = ipaddress.ip_address(value)
     except ValueError:
         return Classification()
+    is_priv = any(addr in net for net in _PRIVATE_NETWORKS)
     return Classification(
-        is_private=addr.is_private and not addr.is_loopback,
-        is_bogon=(not addr.is_global) and not (addr.is_private and not addr.is_loopback),
+        is_private=is_priv,
+        is_bogon=(not addr.is_global) and not is_priv,
         is_multicast=addr.is_multicast,
         is_tor_exit=False,
     )
@@ -87,9 +101,13 @@ def lookup(value: str, type_: str, index: Optional[bundled.IndicatorIndex] = Non
 
 
 def _reputation_for(classification: Classification, matches: list[IntelMatch]) -> Reputation:
+    # Private/loopback addresses are classified, not judged: a match against
+    # our own bundled RFC1918/bogon entries (added purely for the
+    # `classification` fields) must not make an ordinary LAN address read
+    # as "suspicious".
+    if classification.is_private:
+        return "clean"
     if matches:
         best = max(m.confidence for m in matches)
         return "malicious" if best >= MALICIOUS_CONFIDENCE_THRESHOLD else "suspicious"
-    if classification.is_private:
-        return "clean"
     return "unknown"

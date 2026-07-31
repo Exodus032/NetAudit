@@ -35,6 +35,7 @@ TECHNIQUES: dict[str, str] = {
     "T1029": "Scheduled Transfer",
     "T1046": "Network Service Discovery",
     "T1595.001": "Active Scanning: Scanning IP Blocks",
+    "T1557": "Adversary-in-the-Middle",
     "T1557.002": "Adversary-in-the-Middle: ARP Cache Poisoning",
     "T1557.003": "Adversary-in-the-Middle: DHCP Spoofing",
     "T1021": "Remote Services",

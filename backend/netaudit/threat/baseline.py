@@ -68,6 +68,9 @@ class Baseline:
     def has_process_baseline(self, process_name: Optional[str]) -> bool:
         return self._process_samples.get(process_name or "unknown", 0) >= self.min_samples
 
+    def process_sample_count(self, process_name: Optional[str]) -> int:
+        return self._process_samples.get(process_name or "unknown", 0)
+
     def is_known_peer(self, process_name: Optional[str], remote_addr: Optional[str]) -> bool:
         return (remote_addr or "unknown") in self._known_peers.get(process_name or "unknown", set())
 
