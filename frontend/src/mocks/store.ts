@@ -433,6 +433,71 @@ function seedRecommendations(): Recommendation[] {
   ];
 }
 
+// --- Continuous throughput model --------------------------------------
+// state.logs is deliberately SPARSE (~650 rows over ~2.5h, per the warm-start
+// tail comment on seedLogs above) so the Traffic Log table stays a readable
+// "hundreds of rows" list rather than tens of thousands of near-duplicate
+// packets. That's fine for the table, but the Overview throughput chart used
+// to derive bytes_in/bytes_out by literally summing individual logged packet
+// lengths per time bucket — and a bucket's expected packet count is directly
+// proportional to log density. Measured density: ~4.4 entries/sec in the last
+// 15s (the seedLogs warm-start tail / live ticker) versus ~0.13 entries/sec
+// for everything older — a >30x drop exactly at that boundary, which reads as
+// a near-vertical step in the chart no matter how the live-appended point is
+// scaled (see useTimeseries.ts's bucket-matched scaling, which was a correct
+// but insufficient fix on its own: it can't paper over a discontinuity in the
+// underlying bucket sums it's joining onto).
+//
+// The actual fix: track throughput as its own continuous per-second series,
+// entirely independent of which packets happened to get a full log row.
+// Historical seeding and the live ticker both extend the SAME random-walk
+// process one second at a time, so there is no seam to be at — the "join" is
+// just wherever seeding stopped and ticking began, and both sides are
+// generated identically.
+interface ThroughputSample {
+  t: number; // epoch ms
+  bytesIn: number; // bytes in that one-second slot
+  bytesOut: number;
+}
+
+const throughputRand = mulberry32(20260731 ^ 0x7a17);
+
+function stepThroughput(prevIn: number, prevOut: number): { bytesIn: number; bytesOut: number } {
+  const meanIn = 1900;
+  const meanOut = 950;
+  let bytesIn = prevIn + (meanIn - prevIn) * 0.03 + (throughputRand() - 0.5) * 500;
+  let bytesOut = prevOut + (meanOut - prevOut) * 0.03 + (throughputRand() - 0.5) * 300;
+  if (throughputRand() < 0.01) bytesIn += randInt(throughputRand, 3000, 16000); // occasional burst
+  if (throughputRand() < 0.008) bytesOut += randInt(throughputRand, 2000, 9000);
+  bytesIn = Math.max(60, bytesIn);
+  bytesOut = Math.max(30, bytesOut);
+  return { bytesIn: Math.round(bytesIn), bytesOut: Math.round(bytesOut) };
+}
+
+const THROUGHPUT_HISTORY_SECONDS = Math.round((2.5 * 60 * 60)); // matches seedLogs' ~2.5h span
+const THROUGHPUT_MAX_SAMPLES = 26 * 60 * 60; // bounded growth (~26h of 1/sec samples)
+
+function seedThroughputHistory(): ThroughputSample[] {
+  const samples: ThroughputSample[] = [];
+  const now = Date.now();
+  let bytesIn = 1900;
+  let bytesOut = 950;
+  for (let secAgo = THROUGHPUT_HISTORY_SECONDS; secAgo >= 0; secAgo--) {
+    ({ bytesIn, bytesOut } = stepThroughput(bytesIn, bytesOut));
+    samples.push({ t: now - secAgo * 1000, bytesIn, bytesOut });
+  }
+  return samples;
+}
+
+function tickThroughput() {
+  const last = state.throughputHistory[state.throughputHistory.length - 1];
+  const { bytesIn, bytesOut } = stepThroughput(last?.bytesIn ?? 1900, last?.bytesOut ?? 950);
+  state.throughputHistory.push({ t: Date.now(), bytesIn, bytesOut });
+  if (state.throughputHistory.length > THROUGHPUT_MAX_SAMPLES) {
+    state.throughputHistory.splice(0, state.throughputHistory.length - THROUGHPUT_MAX_SAMPLES);
+  }
+}
+
 export interface MockState {
   logs: TrafficLogEntry[];
   connections: Connection[];
@@ -445,6 +510,7 @@ export interface MockState {
   postureGeneratedAt: string;
   postureScanDurationMs: number;
   threats: Threat[];
+  throughputHistory: ThroughputSample[];
 }
 
 const state: MockState = {
@@ -456,6 +522,7 @@ const state: MockState = {
   postureGeneratedAt: new Date().toISOString(),
   postureScanDurationMs: 2140,
   threats: buildThreats(),
+  throughputHistory: seedThroughputHistory(),
   capture: {
     mode: "npcap",
     elevated: true,
@@ -546,11 +613,11 @@ function tickConnections() {
 let statsWindowMs = 5 * 60_000;
 
 // Throughput is a *current rate*, not a window average: averaging bytes over
-// up to 24h of window against a comparatively sparse historical seed would
-// read as ~0 bps right after load and ramp up for minutes as fresher, denser
-// live-ticked entries entered the window. A short trailing slice reflects the
-// live ticker's actual rate immediately, matching the historical timeseries
-// chart's scale from the first frame.
+// up to 24h of window would read as ~0 bps right after load and ramp up for
+// minutes. A short trailing slice of the continuous throughputHistory series
+// (see above) reflects the current rate immediately, and — since that series
+// is the same one mockTimeseries buckets for the historical chart — matches
+// its scale exactly from the first frame, with no sparse-vs-dense seam.
 const THROUGHPUT_SLICE_MS = 12_000;
 
 function computeStatsSummary() {
@@ -559,10 +626,13 @@ function computeStatsSummary() {
   const throughputCutoff = Date.now() - THROUGHPUT_SLICE_MS;
   let sliceBytesIn = 0;
   let sliceBytesOut = 0;
-  for (const e of state.logs) {
-    if (new Date(e.ts).getTime() < throughputCutoff) break; // logs are newest-first
-    if (e.direction === "inbound") sliceBytesIn += e.length;
-    else sliceBytesOut += e.length;
+  let sliceSamples = 0;
+  for (let i = state.throughputHistory.length - 1; i >= 0; i--) {
+    const s = state.throughputHistory[i];
+    if (s.t < throughputCutoff) break; // samples are oldest-first, so scan from the end
+    sliceBytesIn += s.bytesIn;
+    sliceBytesOut += s.bytesOut;
+    sliceSamples += 1;
   }
   let bytes_in = 0,
     bytes_out = 0,
@@ -597,7 +667,7 @@ function computeStatsSummary() {
     remoteHosts.add(e.remote_host);
     processes.add(e.pid);
   }
-  const sliceSeconds = THROUGHPUT_SLICE_MS / 1000;
+  const sliceSeconds = Math.max(1, sliceSamples); // each sample is exactly one second of bytes
   const throughputBpsIn = Math.round((sliceBytesIn * 8) / sliceSeconds);
   const throughputBpsOut = Math.round((sliceBytesOut * 8) / sliceSeconds);
   const openBySeverity = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
@@ -768,9 +838,12 @@ export function startMockTicker() {
       emit("capture", state.capture);
     }
   }, 2000);
-  // log frames batch every 1s per the contract's cadence
+  // log frames batch every 1s per the contract's cadence; throughput advances
+  // on the same 1s cadence so the continuous series never falls behind and
+  // "now" is always exactly one more step past the last historical sample.
   logTickHandle = setInterval(() => {
     tickLog();
+    tickThroughput();
   }, 1000);
 }
 

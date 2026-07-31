@@ -80,14 +80,16 @@ to `info`.
 
 ## View structure
 
-Single-page app, left nav + header, four views (`src/views/`):
+Single-page app, left nav + header, six views (`src/views/`):
 
-1. **Overview** — stat tiles (traffic, throughput, flows, hosts, alerts) with
-   sparklines; a live in/out throughput area chart with a 5m/15m/1h/24h window
-   selector, fed by REST on window change and by `stats` websocket frames in
-   between; protocol and encrypted-vs-plaintext breakdowns as segmented bars;
-   top-talkers panel (host/process/port/protocol toggle); a capture-degraded
-   banner when `capture.mode !== "npcap"` or `elevated` is false.
+1. **Overview** — a composite security-score tile (`/api/security/score`)
+   linking through to Security posture, above stat tiles (traffic, throughput,
+   flows, hosts, alerts) with sparklines; a live in/out throughput area chart
+   with a 5m/15m/1h/24h window selector, fed by REST on window change and by
+   `stats` websocket frames in between; protocol and encrypted-vs-plaintext
+   breakdowns as segmented bars; top-talkers panel (host/process/port/protocol
+   toggle); a capture-degraded banner when `capture.mode !== "npcap"` or
+   `elevated` is false.
 2. **Traffic log** — the workhorse view. A virtualized table
    (`@tanstack/react-virtual`) over `/api/traffic/log`, sortable by time/bytes,
    with a debounced filter bar (free text, protocol, direction, min bytes,
@@ -104,6 +106,33 @@ Single-page app, left nav + header, four views (`src/views/`):
    to run a command**). Dismiss/restore with optimistic UI and rollback on
    error, an "include dismissed" toggle, and a brief highlight on recommendations
    that arrive via the `alert` websocket frame.
+5. **Security posture** (`views/Posture/`) — a hero (`PostureScoreHero`)
+   showing the overall 0-100 score, letter grade, pass/warn/fail/error/skipped
+   counts, and a per-category share-bar breakdown; a category filter and
+   "hide passing checks" toggle; a Rescan button (`POST /api/posture/rescan`);
+   and expandable check rows (`CheckRow`) with observed/expected, why it
+   matters, evidence, and remediation rendered via `CommandBlock`. `error`
+   ("couldn't check" — usually needs administrator) and `skipped` get a
+   deliberately neutral/muted treatment distinct from `fail`, per
+   `lib/severity.ts`'s `checkStatusVisual` — they mean "couldn't check", not
+   "insecure".
+6. **Threats** (`views/Threats/`) — behavioural/signature detections from
+   `/api/threats`, distinct from the hygiene-focused Recommendations view.
+   A stacked-by-severity timeline chart (`/api/threats/timeline`, zero-filled
+   and contiguous) with its own 5m/15m/1h/24h window; filters for severity,
+   category, status, free text, and an "include acknowledged" toggle;
+   severity-then-confidence-sorted rows showing title, category chip, MITRE
+   ATT&CK tactic/technique badges, occurrence count, and first/last seen.
+   Confidence gets its own 4-segment visual meter (`ConfidenceMeter`) on the
+   sequential blue ramp — never the severity/status color scale — since real
+   detectors span 0.15 to 0.95 confidence and a bare percentage isn't legible
+   at a glance. `false_positive_notes` is surfaced as an always-visible amber
+   callout on every row (not buried in an expansion), since most detectors
+   have a plausible benign explanation the user should see before blocking
+   anything. Expanding a row reveals the full reasoning text, evidence table,
+   metrics, indicators, and recommended actions (copy-only via the same
+   `CommandBlock`, ordered investigate-first). Acknowledge/unacknowledge uses
+   the same optimistic-with-rollback pattern as Recommendations' dismiss/restore.
 
 ## Design system
 
@@ -120,8 +149,26 @@ their own container rather than the page.
 
 - `npm install`, `npx tsc -p tsconfig.app.json --noEmit`, and `npm run build`
   all pass cleanly.
-- All four views were exercised in a real browser (mock mode) via Playwright:
+- All six views were exercised in a real browser (mock mode) via Playwright:
   charts render and update live, the traffic log virtualizes and live-tails,
-  row click opens the detail drawer, dismiss/restore works with optimistic
-  removal, and the console stayed error-free throughout. Screenshots are in
-  `docs/screenshots/`.
+  row click opens the detail drawer, Recommendations dismiss/restore and
+  Threats acknowledge/unacknowledge both work with optimistic updates, the
+  Threats severity/category/status/acknowledged filters narrow the list
+  correctly, Posture's category filter and check-row expansion work, and the
+  console stayed error-free throughout. Screenshots are in `docs/screenshots/`.
+- Stat tiles no longer clip at any viewport width (checked 1440/1024/820/400px):
+  `StatTile.css` wraps long values instead of truncating, with container
+  queries stepping the font size down on narrow tiles, and `formatBytesPair`
+  keeps two-value tiles like "In / out split" to a single shared unit.
+- The Overview throughput chart is continuous across the seeded-history/live
+  boundary. The previous approach summed individual packet lengths straight
+  from the traffic log for both the historical timeseries and the live rate —
+  but that log is deliberately sparse (~650 rows over 2.5h, to keep the
+  Traffic Log table readable) versus dense once the live ticker starts,
+  which produced a >30x bucket-density jump (measured) exactly at the seam.
+  The fix (`mocks/store.ts`'s `throughputHistory`, read by both
+  `computeStatsSummary` and `mockTimeseries` in `mocks/server.ts`) tracks
+  throughput as its own continuous per-second random-walk series, independent
+  of which packets happened to get a full log row; historical seeding and the
+  live ticker extend the exact same process one second at a time, so there's
+  no seam left to show a step at.

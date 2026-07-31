@@ -1,0 +1,70 @@
+.security-score-tile {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+
+.security-score-tile-figure {
+  flex: none;
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 1;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.security-score-tile-grade {
+  font-size: 15px;
+  font-weight: 700;
+  border: 2px solid currentColor;
+  border-radius: var(--radius-md);
+  padding: 1px 6px;
+  margin-top: 2px;
+}
+
+.security-score-tile-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.security-score-tile-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.security-score-tile-components {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.security-score-tile-component strong {
+  color: var(--text-secondary);
+}
+
+.security-score-tile-cta {
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--series-1);
+  white-space: nowrap;
+}
+
+.security-score-tile:hover .security-score-tile-cta {
+  text-decoration: underline;
+}
+.security-score-tile:hover .security-score-tile-label {
+  color: var(--series-1);
+}

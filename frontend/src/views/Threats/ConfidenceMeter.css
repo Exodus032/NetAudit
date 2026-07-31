@@ -1,0 +1,31 @@
+.confidence-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.confidence-meter-track {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.confidence-meter-seg {
+  width: 9px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--surface-2);
+}
+.confidence-meter-seg.filled {
+  opacity: 0.9;
+}
+
+.confidence-meter-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.confidence-meter-pct {
+  font-weight: 700;
+  color: var(--text-primary);
+}

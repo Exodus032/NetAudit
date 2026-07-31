@@ -1,0 +1,45 @@
+.threat-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.threat-filter-input {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.threat-filter-input:focus-visible {
+  outline: 2px solid var(--series-1);
+  outline-offset: 1px;
+}
+
+.threat-filter-q {
+  min-width: 200px;
+  flex: 1 1 200px;
+}
+
+.threat-filter-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.threat-filter-spacer {
+  flex: 1 1 auto;
+}
+
+.threat-filter-total {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}

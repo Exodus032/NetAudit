@@ -1,0 +1,152 @@
+import { useState } from "react";
+import type { Threat } from "../../api/types";
+import { SeverityBadge, CategoryChip, ThreatStatusBadge } from "../../components/common/Badge";
+import { CommandBlock } from "../../components/common/CommandBlock";
+import { ConfidenceMeter } from "./ConfidenceMeter";
+import { formatDateTime, formatNumber } from "../../lib/format";
+import "./ThreatRow.css";
+
+export function ThreatRow({
+  threat,
+  onAcknowledge,
+  onUnacknowledge,
+}: {
+  threat: Threat;
+  onAcknowledge: (id: string, note?: string) => Promise<void>;
+  onUnacknowledge: (id: string, note?: string) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const isAck = threat.status === "acknowledged";
+  const isResolved = threat.status === "resolved";
+
+  const handleToggleAck = async () => {
+    setBusy(true);
+    try {
+      if (isAck) await onUnacknowledge(threat.id);
+      else await onAcknowledge(threat.id);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <article className={`threat-row${isResolved ? " threat-row-resolved" : ""}${isAck ? " threat-row-ack" : ""}`}>
+      <div className="threat-row-header">
+        <SeverityBadge severity={threat.severity} />
+        <ThreatStatusBadge status={threat.status} />
+        <CategoryChip category={threat.category} />
+        <ConfidenceMeter confidence={threat.confidence} />
+        <div className="threat-row-spacer" />
+        {!isResolved && (
+          <button className="threat-ack-btn" onClick={handleToggleAck} disabled={busy}>
+            {isAck ? "Unacknowledge" : "Acknowledge"}
+          </button>
+        )}
+      </div>
+
+      {threat.mitre.length > 0 && (
+        <div className="mitre-badges">
+          {threat.mitre.map((m, i) => (
+            <span
+              key={i}
+              className="mitre-badge mono"
+              title={[m.tactic_name, m.technique_name].filter(Boolean).join(" · ") || undefined}
+            >
+              {m.tactic}
+              {m.technique ? ` · ${m.technique}` : ""}
+            </span>
+          ))}
+        </div>
+      )}
+
+      <button className="threat-row-title-btn" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        <span className="threat-row-caret" aria-hidden="true">{open ? "▾" : "▸"}</span>
+        <span className="threat-row-title">{threat.title}</span>
+      </button>
+      <p className="threat-row-summary">{threat.summary}</p>
+
+      {threat.false_positive_notes && (
+        <div className="threat-fp-note">
+          <span className="threat-fp-icon" aria-hidden="true">◐</span>
+          <div>
+            <strong>Could be benign — read before acting. </strong>
+            {threat.false_positive_notes}
+          </div>
+        </div>
+      )}
+
+      {isAck && threat.acknowledged_note && <div className="threat-ack-note">Acknowledged: {threat.acknowledged_note}</div>}
+
+      <div className="threat-row-meta">
+        <span>{formatNumber(threat.occurrences)} occurrences</span>
+        <span>First seen {formatDateTime(threat.first_seen)}</span>
+        <span>Last seen {formatDateTime(threat.last_seen)}</span>
+      </div>
+
+      {open && (
+        <div className="threat-row-detail">
+          <p className="threat-row-detail-text">{threat.detail}</p>
+
+          {threat.evidence.length > 0 && (
+            <table className="threat-evidence">
+              <tbody>
+                {threat.evidence.map((ev, i) => (
+                  <tr key={i}>
+                    <td className="threat-evidence-label">{ev.label}</td>
+                    <td className="threat-evidence-value mono">{ev.value}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
+          {Object.keys(threat.metrics).length > 0 && (
+            <div className="threat-metrics">
+              {Object.entries(threat.metrics).map(([k, v]) => (
+                <span key={k} className="threat-metric-chip">
+                  <span className="threat-metric-key">{k.replace(/_/g, " ")}</span>
+                  <span className="threat-metric-value mono">{String(v)}</span>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {threat.indicators.length > 0 && (
+            <div className="threat-indicators">
+              {threat.indicators.map((ind, i) => (
+                <span key={i} className="threat-indicator-chip mono" title={ind.context}>
+                  {ind.type}: {ind.value}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {threat.recommended_actions.length > 0 && (
+            <ul className="threat-actions">
+              {threat.recommended_actions.map((a, i) => (
+                <li className="threat-action-item" key={i}>
+                  <div className="threat-action-head">
+                    <span className="threat-action-label">{a.label}</span>
+                  </div>
+                  {a.detail && <p className="threat-action-detail">{a.detail}</p>}
+                  {a.kind === "link" && a.url && (
+                    <a className="threat-action-link" href={a.url} target="_blank" rel="noreferrer noopener">
+                      Open link ↗
+                    </a>
+                  )}
+                  {a.kind === "command" && a.command && (
+                    <CommandBlock command={a.command} requiresAdmin={a.requires_admin} />
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {threat.recommended_actions.length === 0 && (
+            <p className="threat-no-actions">No specific action recommended — informational only.</p>
+          )}
+        </div>
+      )}
+    </article>
+  );
+}

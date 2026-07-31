@@ -1,0 +1,21 @@
+.threats-skel-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.threats-skel-card {
+  height: 150px;
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  animation: threats-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes threats-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .threats-skel-card { animation: none; }
+}

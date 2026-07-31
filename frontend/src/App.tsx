@@ -8,6 +8,8 @@ import { OverviewView } from "./views/Overview/OverviewView";
 import { TrafficLogView } from "./views/TrafficLog/TrafficLogView";
 import { ConnectionsView } from "./views/Connections/ConnectionsView";
 import { RecommendationsView } from "./views/Recommendations/RecommendationsView";
+import { PostureView } from "./views/Posture/PostureView";
+import { ThreatsView } from "./views/Threats/ThreatsView";
 import "./App.css";
 
 function App() {
@@ -33,10 +35,12 @@ function App() {
       <div className="app-main-col">
         <Header viewId={view} connectionState={connectionState} theme={theme} onToggleTheme={toggleTheme} />
         <main id="main-content" className="app-content" tabIndex={-1}>
-          {view === "overview" && <OverviewView />}
+          {view === "overview" && <OverviewView onNavigate={setView} />}
           {view === "traffic" && <TrafficLogView />}
           {view === "connections" && <ConnectionsView />}
           {view === "recommendations" && <RecommendationsView />}
+          {view === "posture" && <PostureView />}
+          {view === "threats" && <ThreatsView />}
         </main>
       </div>
     </div>

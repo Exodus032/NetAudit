@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { StatsWindow } from "../../api/types";
+import type { ViewId } from "../../components/layout/Sidebar";
 import { useStatsSummary } from "../../hooks/useStatsSummary";
 import { useTimeseries } from "../../hooks/useTimeseries";
 import { useCaptureStatus } from "../../hooks/useCaptureStatus";
@@ -11,9 +12,10 @@ import { ThroughputChart } from "./ThroughputChart";
 import { ProtocolBreakdown } from "./ProtocolBreakdown";
 import { EncryptedSplit } from "./EncryptedSplit";
 import { TopTalkers } from "./TopTalkers";
-import { formatBitrate, formatBytes, formatNumber } from "../../lib/format";
+import { SecurityScoreTile } from "./SecurityScoreTile";
+import { formatBitrate, formatBytesPair, formatBytes, formatNumber } from "../../lib/format";
 
-export function OverviewView() {
+export function OverviewView({ onNavigate }: { onNavigate: (view: ViewId) => void }) {
   const [window, setWindow] = useState<StatsWindow>("5m");
   const { data: summary, loading: summaryLoading, error: summaryError, history } = useStatsSummary(window);
   const { points, loading: seriesLoading } = useTimeseries(window);
@@ -26,6 +28,12 @@ export function OverviewView() {
       {summaryError && <ErrorState title="Couldn't load stats summary" detail={summaryError} />}
 
       <section className="view-section">
+        <div className="panel">
+          <SecurityScoreTile onOpenPosture={() => onNavigate("posture")} />
+        </div>
+      </section>
+
+      <section className="view-section">
         <div className="grid-stats">
           <StatTile
             label="Total traffic"
@@ -35,7 +43,7 @@ export function OverviewView() {
           />
           <StatTile
             label="In / out split"
-            value={summary ? `${formatBytes(summary.bytes_in)} / ${formatBytes(summary.bytes_out)}` : "—"}
+            value={summary ? formatBytesPair(summary.bytes_in, summary.bytes_out) : "—"}
             loading={summaryLoading && !summary}
           />
           <StatTile

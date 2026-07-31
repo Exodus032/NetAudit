@@ -1,0 +1,238 @@
+.threat-row {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  margin-bottom: 14px;
+}
+
+.threat-row-resolved {
+  opacity: 0.65;
+}
+.threat-row-ack {
+  opacity: 0.85;
+}
+
+.threat-row-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.threat-row-spacer {
+  flex: 1;
+}
+
+.threat-ack-btn {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.threat-ack-btn:hover {
+  color: var(--text-primary);
+}
+.threat-ack-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.mitre-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.mitre-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  cursor: help;
+}
+
+.threat-row-title-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin-bottom: 4px;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text-primary);
+}
+.threat-row-caret {
+  color: var(--text-muted);
+  flex: none;
+  width: 10px;
+}
+.threat-row-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.threat-row-summary {
+  font-size: 13px;
+  color: var(--text-primary);
+  margin: 0 0 10px 18px;
+}
+
+.threat-fp-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: color-mix(in srgb, var(--status-warning) 12%, var(--surface-1));
+  border: 1px solid color-mix(in srgb, var(--status-warning) 40%, transparent);
+  border-radius: var(--radius-md);
+  padding: 9px 12px;
+  font-size: 12px;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+}
+.threat-fp-icon {
+  color: var(--status-warning);
+  font-size: 15px;
+  flex: none;
+  line-height: 1.3;
+}
+.threat-fp-note strong {
+  color: var(--text-primary);
+}
+
+.threat-ack-note {
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  margin-bottom: 10px;
+}
+
+.threat-row-meta {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.threat-row-detail {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.threat-row-detail-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0 0 12px;
+}
+
+.threat-evidence {
+  border-collapse: collapse;
+  margin-bottom: 12px;
+  font-size: 12px;
+}
+.threat-evidence td {
+  padding: 3px 10px 3px 0;
+  vertical-align: top;
+}
+.threat-evidence-label {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.threat-evidence-value {
+  color: var(--text-primary);
+}
+
+.threat-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.threat-metric-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  padding: 3px 8px;
+  font-size: 11px;
+}
+.threat-metric-key {
+  color: var(--text-muted);
+  text-transform: capitalize;
+}
+.threat-metric-value {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.threat-indicators {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.threat-indicator-chip {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 3px 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.threat-actions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.threat-action-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  background: var(--surface-2);
+}
+.threat-action-item + .threat-action-item {
+  margin-top: 8px;
+}
+.threat-action-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.threat-action-label {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+.threat-action-detail {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.threat-action-link {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.threat-no-actions {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0;
+}

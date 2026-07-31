@@ -70,13 +70,20 @@ const WINDOW_MS: Record<StatsWindow, number> = {
   all: 7 * 24 * 60 * 60_000,
 };
 
-// Aggregated directly from the real in-memory log (state.logs) rather than a
-// fabricated curve — this is the same source useTimeseries' live tail reads
-// via computeStatsSummary, so historical and live data are never two
-// unrelated series glued together at a seam. Buckets are contiguous, end at
-// "now", and zero-fill naturally (a bucket with no matching log rows sums to
-// 0) — including for older buckets beyond the seed data's ~2.5h span, which
-// is correct zero-fill behavior per the contract, not a bug.
+// packets_in/out and the protocol breakdown come from state.logs (the sparse
+// per-packet log — fine for a per-bucket count). bytes_in/bytes_out come from
+// state.throughputHistory, a continuous 1-sample-per-second series that the
+// live ticker extends one step at a time (see mocks/store.ts) — historical
+// seeding and live ticking are the SAME generation process, so there is no
+// seam between "seeded history" and "live tail" for the chart to show a step
+// at. (An earlier version summed packet lengths straight from state.logs for
+// bytes too; since that log is deliberately sparse — ~650 rows over 2.5h, to
+// keep the Traffic Log table readable — versus dense once the live ticker
+// starts, that produced a >30x bucket-density jump exactly at the boundary,
+// visible as a near-vertical step in the Overview throughput chart.)
+// Buckets are contiguous, end at "now", and zero-fill naturally for periods
+// with no samples — including bucket ranges older than either series' seed
+// span, which is correct zero-fill behavior per the contract, not a bug.
 export function mockTimeseries(window: StatsWindow = "1h", bucket = 60): Promise<TimeseriesResponse> {
   const windowMs = WINDOW_MS[window] ?? WINDOW_MS["1h"];
   const bucketMs = Math.max(1000, bucket * 1000);
@@ -84,11 +91,15 @@ export function mockTimeseries(window: StatsWindow = "1h", bucket = 60): Promise
   const now = Date.now();
   const points: TimeseriesResponse["points"] = [];
 
+  // throughputHistory is oldest-first and buckets below are processed oldest
+  // to newest too, so a single forward-only pointer is enough to sum each
+  // bucket's samples in O(samples + buckets) rather than O(buckets*samples).
+  const samples = state.throughputHistory;
+  let sampleFloor = 0;
+
   for (let i = bucketCount - 1; i >= 0; i--) {
     const bucketEnd = now - i * bucketMs;
     const bucketStart = bucketEnd - bucketMs;
-    let bytes_in = 0;
-    let bytes_out = 0;
     let packets_in = 0;
     let packets_out = 0;
     let tcp = 0;
@@ -102,18 +113,22 @@ export function mockTimeseries(window: StatsWindow = "1h", bucket = 60): Promise
       const t = new Date(e.ts).getTime();
       if (t >= bucketEnd) continue;
       if (t < bucketStart) break; // everything after is older still
-      if (e.direction === "inbound") {
-        bytes_in += e.length;
-        packets_in += 1;
-      } else {
-        bytes_out += e.length;
-        packets_out += 1;
-      }
+      if (e.direction === "inbound") packets_in += 1;
+      else packets_out += 1;
       if (e.protocol === "tcp") tcp += 1;
       else if (e.protocol === "udp") udp += 1;
       else if (e.protocol === "icmp") icmp += 1;
       else other += 1;
     }
+
+    while (sampleFloor < samples.length && samples[sampleFloor].t < bucketStart) sampleFloor++;
+    let bytes_in = 0;
+    let bytes_out = 0;
+    for (let s = sampleFloor; s < samples.length && samples[s].t < bucketEnd; s++) {
+      bytes_in += samples[s].bytesIn;
+      bytes_out += samples[s].bytesOut;
+    }
+
     points.push({
       t: new Date(bucketStart).toISOString(),
       bytes_in,
