@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from .. import config
 from ..store import stats as stats_store
 
 router = APIRouter()
@@ -39,8 +40,10 @@ def get_top(request: Request, by: str = Query("host"), limit: int = Query(10), w
         _error(400, "invalid_by", f"by must be one of {sorted(VALID_TOP_BY)}")
     if window not in VALID_WINDOWS:
         _error(400, "invalid_window", f"window must be one of {sorted(VALID_WINDOWS)}")
-    if limit < 1 or limit > 1000:
-        _error(400, "invalid_limit", "limit must be between 1 and 1000")
+    if limit < 1:
+        _error(400, "invalid_limit", "limit must be >= 1")
+    # Part C item 6: hard server-side cap regardless of what's requested.
+    limit = min(limit, config.MAX_LIMIT)
     db_path = request.app.state.db_path
     items = stats_store.get_top(by, limit, window, db_path)
     return {"by": by, "window": window, "items": items}

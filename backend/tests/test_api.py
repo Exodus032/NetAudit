@@ -15,9 +15,18 @@ NOW = 1_700_001_000.0
 
 @pytest.fixture
 def app_client(tmp_path):
+    """Every test app gets its own token file under tmp_path (never the
+    real %LOCALAPPDATA%) and a loopback client address, since the auth and
+    bootstrap middleware (Part C items 2 and 13) key off both. The token is
+    fetched from app.state after startup and attached as a default header
+    so existing calls in this file don't need to change -- this is the
+    "supply the token via a fixture" update called for when auth now
+    guards routes these tests exercise."""
     db_path = tmp_path / "api-test.db"
-    app = create_app(db_path=db_path, autostart_capture=False)
-    with TestClient(app) as client:
+    token_path = tmp_path / "token"
+    app = create_app(db_path=db_path, token_path=token_path, autostart_capture=False)
+    with TestClient(app, client=("127.0.0.1", 51000)) as client:
+        client.headers.update({"X-NetAudit-Token": app.state.token})
         yield client, db_path
     dbmod.reset_for_tests(db_path)
 
@@ -32,7 +41,10 @@ class TestHealth:
         assert isinstance(body["uptime_seconds"], (int, float))
         cap = body["capture"]
         assert cap["mode"] in ("npcap", "rawsocket", "polling", "off")
-        assert set(cap.keys()) == {"mode", "elevated", "interface", "running", "degraded_reason"}
+        # dropped_packets is an additive Part C item 6 field -- v1 fields
+        # are unchanged, so this stays a superset check, not equality.
+        assert {"mode", "elevated", "interface", "running", "degraded_reason"} <= set(cap.keys())
+        assert isinstance(cap["dropped_packets"], int)
 
 
 class TestInterfaces:
@@ -184,7 +196,7 @@ class TestCaptureControl:
         client, db_path = app_client
         r = client.get("/api/capture/status")
         assert r.status_code == 200
-        assert set(r.json().keys()) == {"mode", "elevated", "interface", "running", "degraded_reason"}
+        assert {"mode", "elevated", "interface", "running", "degraded_reason"} <= set(r.json().keys())
 
         append_batch([{
             "ts_epoch": NOW, "protocol": "tcp", "src_addr": "10.0.0.5", "src_port": 1,

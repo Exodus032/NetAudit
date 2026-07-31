@@ -1,7 +1,42 @@
-fastapi>=0.115,<1.0
-uvicorn[standard]>=0.30,<1.0
-pydantic>=2.7,<3.0
-psutil>=6.0
-scapy>=2.5; platform_system == "Windows"
-pytest>=8.0
-httpx>=0.27
+# Pinned exactly (Part C item 12) -- every version below is what this
+# backend was built and tested against in this venv (see `pip freeze`).
+# Bump deliberately, not via a floor/ceiling range, so an upstream release
+# never silently changes behavior underneath a security-sensitive service.
+# None of these phone home: no telemetry, update-checkers, or analytics in
+# any of them.
+
+fastapi==0.141.1
+# Web framework: routing, request parsing/validation, the ASGI app object
+# our security middleware wraps.
+
+uvicorn[standard]==0.52.0
+# ASGI server that actually binds the socket and serves `app`. The
+# [standard] extra pulls httptools/websockets/uvloop-on-posix for
+# performance; none of it changes the loopback-only bind behavior, which is
+# enforced in our own config.py/server.py, not by uvicorn.
+
+pydantic==2.13.4
+# Request/response model validation (FastAPI's dependency, used directly
+# for the handful of response models in models.py).
+
+psutil==7.2.2
+# Cross-platform process/connection/interface enumeration -- backs the
+# polling capture tier, /api/interfaces, and PID<->process attribution.
+# Pure introspection of the local machine; makes no network calls of its
+# own.
+
+scapy==2.7.0; platform_system == "Windows"
+# Packet capture (the npcap tier) on Windows. Windows-only because that's
+# the only platform this backend targets; kept optional via the marker so
+# a non-Windows dev/test environment doesn't need it installed.
+
+pytest==9.1.1
+# Test runner. Dev/test dependency only -- not imported by any code path
+# that runs in the shipped service.
+
+httpx==0.28.1
+# HTTP client used only by FastAPI's TestClient in the test suite. Not
+# imported by the running service; the server makes no outbound HTTP calls
+# of its own (Part B's "no outbound network requests" constraint applies to
+# the threat-intel package, but this backend as a whole also never phones
+# home).

@@ -7,6 +7,7 @@ from __future__ import annotations
 import ipaddress
 import socket
 import threading
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Optional
@@ -94,8 +95,18 @@ class ProcessTable:
 # --- Reverse DNS, bounded + cached + async ---------------------------------
 
 class ReverseDnsCache:
-    def __init__(self, max_workers: int = config.DNS_MAX_WORKERS) -> None:
-        self._cache: dict[str, Optional[str]] = {}
+    """Bounded concurrency (max_workers threads, Part C item 6) and a
+    bounded, LRU-evicted cache (max_entries) so a host that talks to a huge
+    number of distinct remote addresses over a long-running capture can't
+    grow this dict without limit."""
+
+    def __init__(
+        self,
+        max_workers: int = config.DNS_MAX_WORKERS,
+        max_entries: int = config.DNS_CACHE_MAX_ENTRIES,
+    ) -> None:
+        self._cache: "OrderedDict[str, Optional[str]]" = OrderedDict()
+        self._max_entries = max_entries
         self._inflight: set[str] = set()
         self._lock = threading.Lock()
         self._executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="netaudit-dns")
@@ -105,6 +116,7 @@ class ReverseDnsCache:
         kicks off a background resolution if we haven't seen this addr."""
         with self._lock:
             if addr in self._cache:
+                self._cache.move_to_end(addr)
                 return self._cache[addr]
             if addr in self._inflight:
                 return None
@@ -120,6 +132,9 @@ class ReverseDnsCache:
             hostname = None
         with self._lock:
             self._cache[addr] = hostname
+            self._cache.move_to_end(addr)
+            while len(self._cache) > self._max_entries:
+                self._cache.popitem(last=False)  # evict least-recently-used
             self._inflight.discard(addr)
 
     def shutdown(self) -> None:

@@ -9,6 +9,8 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
+from .. import config
+from ..security import csv_safe_cell
 from ..store.packets import LogFilters, query_log
 from ..timeutil import parse_iso
 
@@ -20,6 +22,14 @@ _ENTRY_FIELDS = [
     "is_external", "is_encrypted", "summary", "risk",
 ]
 
+# Part C item 4: filter fields go through a hardcoded allowlist, never
+# interpolated. protocol/direction values were already bound as SQL
+# parameters (never string-built), so this isn't closing a SQL-injection
+# hole -- it's rejecting nonsense values with 400 instead of silently
+# matching zero rows, per spec.
+_VALID_PROTOCOLS = {"tcp", "udp", "icmp", "other"}
+_VALID_DIRECTIONS = {"inbound", "outbound", "local"}
+
 
 def _error(status: int, code: str, message: str):
     raise HTTPException(status_code=status, detail={"error": {"code": code, "message": message}})
@@ -30,10 +40,18 @@ def _build_filters(
     since: Optional[str], until: Optional[str], direction: Optional[str],
     min_bytes: Optional[int], sort: str, order: str,
 ) -> LogFilters:
-    if limit < 1 or limit > 1000:
-        _error(400, "invalid_limit", "limit must be between 1 and 1000")
+    if limit < 1:
+        _error(400, "invalid_limit", "limit must be >= 1")
+    # Part C item 6: hard server-side cap, regardless of what's requested --
+    # clamp rather than reject, so a client asking for 999999 just gets the
+    # capped result set.
+    limit = min(limit, config.MAX_LIMIT)
     if offset < 0:
         _error(400, "invalid_offset", "offset must be >= 0")
+    if protocol is not None and protocol not in _VALID_PROTOCOLS:
+        _error(400, "invalid_protocol", f"protocol must be one of {sorted(_VALID_PROTOCOLS)}")
+    if direction is not None and direction not in _VALID_DIRECTIONS:
+        _error(400, "invalid_direction", f"direction must be one of {sorted(_VALID_DIRECTIONS)}")
     if sort not in ("time", "bytes"):
         _error(400, "invalid_sort", "sort must be 'time' or 'bytes'")
     if order not in ("asc", "desc"):
@@ -82,7 +100,7 @@ def export_traffic(
     if format not in ("csv", "json"):
         _error(400, "invalid_format", "format must be 'csv' or 'json'")
 
-    filters = _build_filters(min(limit, 1000), offset, protocol, q, since, until, direction, min_bytes, sort, order)
+    filters = _build_filters(limit, offset, protocol, q, since, until, direction, min_bytes, sort, order)
     entries, _total = query_log(filters, request.app.state.db_path)
     ts_label = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     filename = f"netaudit-log-{ts_label}.{format}"
@@ -99,7 +117,10 @@ def export_traffic(
     writer = csv.DictWriter(buf, fieldnames=_ENTRY_FIELDS)
     writer.writeheader()
     for e in entries:
-        writer.writerow({k: e.get(k) for k in _ENTRY_FIELDS})
+        # Part C item 5: any cell starting with =, +, -, @, tab, or CR gets
+        # a leading `'` so spreadsheet apps never interpret it as a formula
+        # (e.g. a hostile process_name like "=cmd|'/C calc'!A1").
+        writer.writerow({k: csv_safe_cell(e.get(k)) for k in _ENTRY_FIELDS})
     buf.seek(0)
     return StreamingResponse(
         io.BytesIO(buf.getvalue().encode("utf-8")),

@@ -19,6 +19,9 @@ class CaptureInfo(BaseModel):
     interface: Optional[str]
     running: bool
     degraded_reason: Optional[str]
+    # Additive (Part C item 6): count of packets dropped because the
+    # bounded capture queue was full. Does not alter any v1 field.
+    dropped_packets: int = 0
 
 
 class HealthResponse(BaseModel):

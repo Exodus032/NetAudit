@@ -81,6 +81,10 @@ class Pipeline:
             "interface": self.interface_id,
             "running": bool(self._running and self.backend and self.backend.running),
             "degraded_reason": self.degraded_reason,
+            # Additive field (Part C item 6) -- does not remove/rename any
+            # v1 field, so existing /api/health and /api/capture/status
+            # consumers are unaffected.
+            "dropped_packets": self.backend.dropped if self.backend is not None else 0,
         }
 
     def _refresh_self_ips(self) -> None:

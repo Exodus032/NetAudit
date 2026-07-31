@@ -51,6 +51,12 @@ class CaptureBackend(ABC):
     def running(self) -> bool:
         return self._running
 
+    @property
+    def dropped(self) -> int:
+        """Packets dropped because the bounded capture queue was full
+        (Part C item 6). Surfaced via /api/health as capture.dropped_packets."""
+        return self._dropped
+
     @abstractmethod
     def start(self, interface_id: str | None = None) -> None:
         ...
