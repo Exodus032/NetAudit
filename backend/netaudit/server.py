@@ -23,7 +23,12 @@ from .store import db as dbmod
 logger = logging.getLogger("netaudit.server")
 
 
-def create_app(db_path=None, token_path=None, autostart_capture: bool = True) -> FastAPI:
+def create_app(
+    db_path=None,
+    token_path=None,
+    autostart_capture: bool = True,
+    wire_security_packages: bool = True,
+) -> FastAPI:
     db_path = db_path or config.DB_PATH
     token_path = token_path or config.TOKEN_PATH
 
@@ -45,6 +50,10 @@ def create_app(db_path=None, token_path=None, autostart_capture: bool = True) ->
             pipeline.spawn_background_tasks()
         yield
         await pipeline.shutdown()
+        for attr in ("threat_scheduler", "arp_observer"):
+            component = getattr(app.state, attr, None)
+            if component is not None:
+                component.stop()
 
     app = FastAPI(title="NetAudit", version=config.VERSION, lifespan=lifespan)
     app.state.db_path = db_path
@@ -76,6 +85,17 @@ def create_app(db_path=None, token_path=None, autostart_capture: bool = True) ->
     ):
         app.include_router(router)
     app.include_router(ws.router)
+
+    if wire_security_packages:
+        # Mounts the posture and threat routers and gives them live
+        # dependencies. Kept out of create_app itself so the two packages
+        # stay independently testable, and so a test can build a bare v1 app
+        # without spinning up an ARP poller. Deliberately after the v1
+        # routers and after the middleware, so these inherit auth, rate
+        # limiting, CORS and security headers with no per-route work.
+        from .integration import wire_security
+
+        wire_security(app, db_path=db_path, start_background=autostart_capture)
 
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request: Request, exc: StarletteHTTPException):
