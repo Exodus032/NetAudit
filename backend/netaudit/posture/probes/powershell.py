@@ -45,15 +45,24 @@ ALLOWLIST: dict[str, list[str]] = {
         "| ConvertTo-Json -Compress -Depth 4"
     ),
     "firewall_rules_inbound_allow": _ps(
+        # Bulk-fetch each filter table once and join by InstanceID in a
+        # hashtable, rather than piping each rule through
+        # Get-NetFirewallPortFilter/-AddressFilter individually -- the
+        # per-rule form re-runs a CIM query per rule and can take minutes on
+        # a machine with a few hundred enabled rules; this join is a single
+        # CIM query per filter type regardless of rule count.
         "$ProgressPreference='SilentlyContinue'; "
         "$rules = Get-NetFirewallRule -Direction Inbound -Action Allow -Enabled True; "
+        "$portMap = @{}; foreach ($f in Get-NetFirewallPortFilter) { $portMap[$f.InstanceID] = $f }; "
+        "$addrMap = @{}; foreach ($f in Get-NetFirewallAddressFilter) { $addrMap[$f.InstanceID] = $f }; "
         "$out = foreach ($r in $rules) { "
-        "  $pf = $r | Get-NetFirewallPortFilter; "
-        "  $af = $r | Get-NetFirewallAddressFilter; "
+        "  $pf = $portMap[$r.InstanceID]; "
+        "  $af = $addrMap[$r.InstanceID]; "
         "  [pscustomobject]@{ "
         "    name = $r.DisplayName; profile = [string]$r.Profile; "
-        "    protocol = $pf.Protocol; local_port = $pf.LocalPort; "
-        "    remote_address = $af.RemoteAddress "
+        "    protocol = $(if ($pf) { $pf.Protocol } else { $null }); "
+        "    local_port = $(if ($pf) { $pf.LocalPort } else { $null }); "
+        "    remote_address = $(if ($af) { $af.RemoteAddress } else { $null }) "
         "  } "
         "}; $out | ConvertTo-Json -Compress -Depth 4"
     ),

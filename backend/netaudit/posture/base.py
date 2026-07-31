@@ -67,10 +67,11 @@ class ProbeContext:
         self._cache: dict[str, ProbeResult] = {}
         self._admin: Optional[bool] = None
 
-    def ps(self, key: str) -> ProbeResult:
+    def ps(self, key: str, timeout: Optional[float] = None) -> ProbeResult:
         cache_key = f"ps:{key}"
         if cache_key not in self._cache:
-            self._cache[cache_key] = powershell.run_ps(key)
+            kwargs = {} if timeout is None else {"timeout": timeout}
+            self._cache[cache_key] = powershell.run_ps(key, **kwargs)
         return self._cache[cache_key]
 
     def registry(self, key: str) -> ProbeResult:

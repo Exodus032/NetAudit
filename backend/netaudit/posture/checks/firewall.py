@@ -135,7 +135,10 @@ class FirewallAllowRulesBroad(Check):
     )
 
     def gather(self, probes: ProbeContext) -> dict:
-        return {"rules": require_ok(probes.ps("firewall_rules_inbound_allow"), "inbound firewall allow rules")}
+        # The probe bulk-fetches filters and joins by InstanceID (~1s for
+        # 300 rules on this machine), but give it a bit more than the 5s
+        # default as headroom on a machine with a much larger rule set.
+        return {"rules": require_ok(probes.ps("firewall_rules_inbound_allow", timeout=10.0), "inbound firewall allow rules")}
 
     def evaluate(self, raw: dict) -> CheckOutcome:
         rules = as_list(raw["rules"])

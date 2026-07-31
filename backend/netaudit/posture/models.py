@@ -139,6 +139,14 @@ class SecurityScoreResponse(BaseModel):
     top_wins: list[TopWin] = Field(default_factory=list)
 
 
+class RescanRequest(BaseModel):
+    """Body of `POST /api/posture/rescan`. Omit `categories` (or send `null`)
+    to rescan everything."""
+
+    model_config = _model()
+    categories: Optional[list[str]] = None
+
+
 class ErrorBody(BaseModel):
     model_config = _model()
     code: str
