@@ -4,6 +4,7 @@
 // falls back to mocks automatically if the backend is unreachable.
 
 import { setBackendMode } from "./backendMode";
+import { BootstrapError, ensureToken, invalidateToken } from "./auth";
 import {
   mockCaptureClear,
   mockCaptureStart,
@@ -60,11 +61,27 @@ if (FORCE_MOCKS) {
 }
 
 function isNetworkError(err: unknown): boolean {
-  return err instanceof TypeError;
+  // A BootstrapError means we couldn't get a token at all — from the
+  // frontend's point of view that's equivalent to "backend unreachable", so
+  // it takes the same fallback-to-mock path as a raw network failure.
+  return err instanceof TypeError || err instanceof BootstrapError;
+}
+
+async function fetchWithToken(path: string, init?: RequestInit): Promise<Response> {
+  const token = await ensureToken();
+  const headers = new Headers(init?.headers);
+  if (token) headers.set("X-NetAudit-Token", token);
+  return fetch(path, { ...init, headers });
 }
 
 async function realFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, init);
+  let res = await fetchWithToken(path, init);
+  if (res.status === 401) {
+    // Token may have expired or the backend restarted with a new one — drop
+    // it and retry exactly once with a freshly bootstrapped token.
+    invalidateToken();
+    res = await fetchWithToken(path, init);
+  }
   if (!res.ok) {
     let body: ApiErrorBody | null = null;
     try {

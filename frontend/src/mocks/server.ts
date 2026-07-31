@@ -52,12 +52,15 @@ const WINDOW_MS: Record<StatsWindow, number> = {
   all: 7 * 24 * 60 * 60_000,
 };
 
-// Anchored to bits/sec (~500 Kbps average) rather than a fixed bytes-per-bucket
-// figure, so buckets of any width scale consistently AND match the order of
-// magnitude of the live tail (useTimeseries appends points derived from the
-// same real throughput_bps_in/out the stats summary reports). Without this,
-// a fabricated MB-scale historical curve and a live tail computed from actual
-// bps created a visible cliff where the two joined.
+// Anchored to bits/sec at roughly the same order of magnitude as the mock
+// ticker's actual generation rate (~1-8 log entries/sec at ~64-1500 bytes each,
+// averaging ~28 Kbps combined) rather than an arbitrary MB-scale figure, so
+// buckets of any width scale consistently AND match the live tail (useTimeseries
+// appends points derived from the real throughput_bps_in/out the stats summary
+// reports, which is itself now a short trailing-slice rate — see
+// computeStatsSummary's THROUGHPUT_SLICE_MS in mocks/store.ts). Without this
+// alignment, a fabricated high-bandwidth historical curve and a modest
+// live-computed tail created a visible cliff where the two joined.
 export function mockTimeseries(window: StatsWindow = "1h", bucket = 60): Promise<TimeseriesResponse> {
   const windowMs = WINDOW_MS[window] ?? WINDOW_MS["1h"];
   const bucketMs = Math.max(1000, bucket * 1000);
@@ -69,8 +72,8 @@ export function mockTimeseries(window: StatsWindow = "1h", bucket = 60): Promise
   for (let i = bucketCount - 1; i >= 0; i--) {
     const t = new Date(now - i * bucketMs - (now % bucketMs));
     phase += 0.35;
-    const baseBps = 500_000 + Math.sin(phase) * 220_000; // ~280-720 Kbps
-    const noiseBps = randFloat(rand, -80_000, 140_000);
+    const baseBps = 24_000 + Math.sin(phase) * 10_000; // ~14-34 Kbps
+    const noiseBps = randFloat(rand, -6_000, 9_000);
     const bytesPerSecond = Math.max(0, baseBps + noiseBps) / 8;
     const bytes_in = Math.round(bytesPerSecond * bucket);
     const bytes_out = Math.max(0, Math.round(bytes_in * randFloat(rand, 0.12, 0.35)));

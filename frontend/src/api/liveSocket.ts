@@ -5,6 +5,7 @@
 // of subscribers regardless of type, order, or gaps.
 
 import { getBackendMode, setBackendMode } from "./backendMode";
+import { ensureToken, invalidateToken } from "./auth";
 import { startMockTicker, subscribe as subscribeMockTicker } from "../mocks/store";
 import type { WsFrame } from "./types";
 
@@ -92,11 +93,24 @@ class LiveSocketManager {
     this.ws = null;
   }
 
-  private connectReal() {
+  private async connectReal() {
     if (this.usingMock) return;
     this.setState(this.attempts === 0 ? "connecting" : "reconnecting");
+
+    // Per docs/API_CONTRACT_V2_SECURITY.md Part C item 2: the socket must
+    // carry the bootstrap token as ?token=. If we can't get one, treat it the
+    // same as any other connect failure (backoff, eventually fall to mocks).
+    let token: string;
+    try {
+      token = await ensureToken();
+    } catch {
+      this.handleRealFailure();
+      return;
+    }
+    if (this.usingMock) return; // a mock fallback may have started while we awaited
+
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const url = `${proto}//${window.location.host}/ws/live`;
+    const url = `${proto}//${window.location.host}/ws/live?token=${encodeURIComponent(token)}`;
     let socket: WebSocket;
     try {
       socket = new WebSocket(url);
@@ -139,6 +153,10 @@ class LiveSocketManager {
   private handleRealFailure() {
     this.ws = null;
     this.attempts += 1;
+    // The token may be stale (backend restarted, rotated it) or simply wrong
+    // — drop it so the next attempt re-bootstraps rather than retrying the
+    // same rejected token in a loop.
+    invalidateToken();
     if (this.attempts >= MAX_REAL_ATTEMPTS && getBackendMode() !== "real") {
       this.connectMock();
       return;

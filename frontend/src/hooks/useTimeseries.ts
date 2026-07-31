@@ -62,8 +62,6 @@ export function useTimeseries(window: StatsWindow): UseTimeseriesResult {
         other: 0,
       };
       const next = [...prev.slice(1), point];
-      // eslint-disable-next-line no-console
-      console.debug("[debug timeseries live point]", point, "throughput", s.throughput_bps_in, s.throughput_bps_out);
       return next;
     });
   });

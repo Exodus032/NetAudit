@@ -564,7 +564,9 @@ function computeStatsSummary() {
     remoteHosts.add(e.remote_host);
     processes.add(e.pid);
   }
-  const windowSeconds = Math.max(1, statsWindowMs / 1000);
+  const sliceSeconds = THROUGHPUT_SLICE_MS / 1000;
+  const throughputBpsIn = Math.round((sliceBytesIn * 8) / sliceSeconds);
+  const throughputBpsOut = Math.round((sliceBytesOut * 8) / sliceSeconds);
   const openBySeverity = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
   let open = 0;
   for (const r of state.recommendations) {
@@ -582,9 +584,9 @@ function computeStatsSummary() {
     bytes_out,
     packets_in,
     packets_out,
-    throughput_bps_in: Math.round((bytes_in * 8) / windowSeconds),
-    throughput_bps_out: Math.round((bytes_out * 8) / windowSeconds),
-    peak_throughput_bps: Math.round(Math.max(bytes_in, bytes_out) * 8 * 1.6 / windowSeconds) + 500_000,
+    throughput_bps_in: throughputBpsIn,
+    throughput_bps_out: throughputBpsOut,
+    peak_throughput_bps: Math.round(Math.max(throughputBpsIn, throughputBpsOut) * 1.7) + 20_000,
     active_flows: state.connections.length,
     unique_remote_hosts: remoteHosts.size,
     unique_processes: processes.size,
