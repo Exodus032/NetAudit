@@ -87,6 +87,49 @@ query sizes, escapes CSV export fields, rate-limits the API, and validates WebSo
 origins. It stores packet headers and metadata, not payloads. See Part C of
 `docs/API_CONTRACT_V2_SECURITY.md` for the full list — every item there has a test.
 
+## What it can and cannot see
+
+Detection quality is bounded by the capture tier, and the tool is explicit about
+this rather than quietly degrading.
+
+**On the polling tier (no admin, no Npcap)** the connection table is sampled on a
+fixed interval, so every long-lived connection arrives as a perfectly regular
+series. Timing-based detection is meaningless on that data, so `c2_beaconing` is
+switched off automatically and reported as disabled in `/api/threats/detectors`.
+Run elevated to get it back.
+
+**DNS detectors are inert against live traffic.** The capture layer records packet
+headers only and never parses DNS payloads, so there is no query name, type or
+response code to hand to `dns_tunneling`, `dga_domains` or `dns_exfil_volume`.
+They are fully unit-tested but will not fire on real traffic until a DNS payload
+parser exists. Synthesising plausible-looking queries from port-53 traffic would
+let them appear to work while feeding them fabricated input, which is worse.
+
+**TLS inspection is limited** for the same reason: nothing parses ClientHello, so
+`tls_version`, JA3 and certificate flags are never populated and `suspicious_tls`
+skips rather than guessing.
+
+**`rogue_dhcp` cannot fire.** ARP visibility comes from polling the OS ARP cache
+for IP-to-MAC changes, which is enough for `arp_spoofing` and `mac_flapping` but
+carries no DHCP traffic.
+
+**Loopback and broadcast traffic are excluded** from threat detection. Both
+produced confident false positives in testing: the machine appearing to port-scan
+itself across 113 loopback ports, and the broadcast MAC `FF:FF:FF:FF:FF:FF`
+appearing to "claim" two broadcast addresses as a critical ARP spoofing event.
+Local listener exposure is covered by the `listening_exposed` rule and the
+posture `listening_services` checks instead.
+
+**The bundled indicator set is a starter set, not a threat feed.** It contains
+only publicly documented infrastructure facts, each with its source. Tor exit
+lists and scanner ranges are deliberately absent because they rotate faster than
+a static bundled file can honestly track.
+
+**12 of the 43 posture checks never return `fail`** — they are informational or
+heuristic, and a hard fail would overstate the risk. `promiscuous_adapters` in
+particular is a heuristic: Windows exposes no true promiscuous-mode API, so it
+detects Npcap/WinPcap driver bindings instead.
+
 ## Scope
 
 This tool observes traffic on interfaces you own and audits the machine you run it on.
