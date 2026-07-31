@@ -49,11 +49,21 @@ export function useTimeseries(window: StatsWindow): UseTimeseriesResult {
     const s = frame.data as StatsSummary;
     setPoints((prev) => {
       if (prev.length === 0) return prev;
-      const tickSeconds = 2; // stats frames arrive ~every 2s per contract
+      // Scale the current rate to one bucket's worth of bytes using the SAME
+      // bucket width as the historical series (`bucket`, seconds) rather than
+      // a hardcoded tick interval. Historical buckets and this live point are
+      // both "bytes accumulated over `bucket` seconds" — mismatching that
+      // width (e.g. assuming a fixed 2s tick against 60s historical buckets)
+      // is what previously produced a visible step where the two joined,
+      // even once both were pulling from the same underlying rate.
       const point: TimeseriesPoint = {
         t: s.generated_at,
-        bytes_in: Math.round((s.throughput_bps_in / 8) * tickSeconds),
-        bytes_out: Math.round((s.throughput_bps_out / 8) * tickSeconds),
+        bytes_in: Math.round((s.throughput_bps_in / 8) * bucket),
+        bytes_out: Math.round((s.throughput_bps_out / 8) * bucket),
+        // Not derived here: packet/protocol breakdowns in the summary are
+        // counted over the full selected window, not a single bucket, so
+        // there's no reliable way to scale them down to one bucket's share.
+        // The throughput chart only reads bytes_in/out today.
         packets_in: 0,
         packets_out: 0,
         tcp: 0,

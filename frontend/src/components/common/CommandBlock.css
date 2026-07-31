@@ -1,0 +1,63 @@
+.command-block {
+  margin-top: 8px;
+}
+
+.command-block-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--status-warning);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.command-admin-warning {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--status-critical);
+  border: 1px solid var(--status-critical);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.command-block-row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.command-block-code {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: pre;
+  background: var(--surface-0);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.command-copy-btn {
+  flex: none;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.command-copy-btn:hover {
+  background: var(--surface-2);
+}
+
+.command-risk-note {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+}

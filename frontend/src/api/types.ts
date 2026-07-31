@@ -294,3 +294,255 @@ export type WsFrame =
   | WsConnectionsFrame
   | WsCaptureFrame
   | { type: string; data: unknown };
+
+// =======================================================================
+// v2 security extensions — docs/API_CONTRACT_V2_SECURITY.md (FROZEN)
+// =======================================================================
+
+// --- Part A: host security posture ------------------------------------
+
+export type CheckStatus = "pass" | "warn" | "fail" | "error" | "skipped";
+export type Grade = "A" | "B" | "C" | "D" | "F";
+
+export interface RemediationCommand {
+  shell: string;
+  command: string;
+  requires_admin: boolean;
+  reversible: boolean;
+  risk_note?: string;
+}
+
+export interface Remediation {
+  summary: string;
+  commands: RemediationCommand[];
+  docs_url?: string;
+}
+
+export interface PostureCheck {
+  id: string;
+  category: string;
+  title: string;
+  status: CheckStatus;
+  severity: Severity;
+  score_weight: number;
+  observed: string;
+  expected: string;
+  why_it_matters: string;
+  evidence: EvidenceItem[];
+  remediation: Remediation;
+  references: string[];
+  checked_at: string;
+  duration_ms: number;
+}
+
+export interface PostureCategorySummary {
+  id: string;
+  label: string;
+  score: number;
+  checks: string[];
+}
+
+export interface PostureCounts {
+  pass: number;
+  warn: number;
+  fail: number;
+  error: number;
+  skipped: number;
+}
+
+export interface PostureResponse {
+  generated_at: string;
+  scan_duration_ms: number;
+  score: number;
+  grade: Grade;
+  counts: PostureCounts;
+  categories: PostureCategorySummary[];
+  checks: PostureCheck[];
+}
+
+export interface PostureQuery {
+  category?: string;
+  include_pass?: boolean;
+}
+
+export interface PostureRescanBody {
+  categories?: string[];
+}
+
+// --- Composite security score -----------------------------------------
+
+export type ScoreComponentKind = "posture" | "threat" | "recommendation";
+export type Effort = "low" | "medium" | "high";
+
+export interface ScoreComponent {
+  id: string;
+  label: string;
+  score: number;
+  weight: number;
+  grade: Grade;
+}
+
+export interface ScoreHistoryPoint {
+  t: string;
+  overall: number;
+}
+
+export interface TopWin {
+  id: string;
+  kind: ScoreComponentKind;
+  title: string;
+  score_gain: number;
+  effort: Effort;
+}
+
+export interface SecurityScoreResponse {
+  generated_at: string;
+  overall: number;
+  grade: Grade;
+  components: ScoreComponent[];
+  history: ScoreHistoryPoint[];
+  top_wins: TopWin[];
+}
+
+// --- Part B: threat detection -------------------------------------------
+
+export type ThreatStatus = "active" | "resolved" | "acknowledged";
+export type ThreatCategory =
+  | "command_and_control"
+  | "exfiltration"
+  | "reconnaissance"
+  | "lateral_movement"
+  | "credential_exposure"
+  | "dns_abuse"
+  | "spoofing"
+  | "malicious_peer"
+  | "policy_violation"
+  | "anomaly";
+export type IndicatorType = "ip" | "domain" | "url" | "port" | "process" | "mac" | "ja3" | "hash";
+export type ThreatActionKind = "manual" | "command" | "link";
+
+export interface MitreRef {
+  tactic: string;
+  tactic_name?: string;
+  technique: string;
+  technique_name?: string;
+}
+
+export interface ThreatIndicator {
+  type: IndicatorType;
+  value: string;
+  context?: string;
+}
+
+export interface ThreatMetrics {
+  [key: string]: number | string | undefined;
+}
+
+export interface ThreatAction {
+  label: string;
+  kind: ThreatActionKind;
+  shell?: string;
+  command?: string;
+  requires_admin?: boolean;
+  reversible?: boolean;
+  detail: string;
+  url?: string;
+}
+
+export interface Threat {
+  id: string;
+  detector_id: string;
+  title: string;
+  severity: Severity;
+  confidence: number;
+  category: ThreatCategory;
+  status: ThreatStatus;
+  mitre: MitreRef[];
+  summary: string;
+  detail: string;
+  evidence: EvidenceItem[];
+  indicators: ThreatIndicator[];
+  metrics: ThreatMetrics;
+  first_seen: string;
+  last_seen: string;
+  occurrences: number;
+  related_connection_ids: string[];
+  related_log_ids: number[];
+  false_positive_notes: string;
+  recommended_actions: ThreatAction[];
+  acknowledged_note?: string;
+}
+
+export interface ThreatsQuery {
+  limit?: number;
+  offset?: number;
+  severity?: Severity;
+  category?: ThreatCategory;
+  status?: ThreatStatus;
+  since?: string;
+  until?: string;
+  q?: string;
+  include_acknowledged?: boolean;
+}
+
+export interface ThreatsResponse {
+  total: number;
+  limit: number;
+  offset: number;
+  threats: Threat[];
+}
+
+export interface ThreatAckResponse {
+  id: string;
+  status: ThreatStatus;
+  note?: string;
+}
+
+export interface ThreatTimelinePoint {
+  t: string;
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+  info: number;
+}
+
+export interface ThreatTimelineResponse {
+  window: StatsWindow;
+  bucket_seconds: number;
+  points: ThreatTimelinePoint[];
+}
+
+export interface DetectorTunable {
+  key: string;
+  value: number | string | boolean;
+  type: "int" | "float" | "bool" | "string";
+  min?: number;
+  max?: number;
+  description: string;
+}
+
+export interface Detector {
+  id: string;
+  label: string;
+  category: ThreatCategory;
+  description: string;
+  enabled: boolean;
+  default_severity: Severity;
+  mitre: Partial<MitreRef>[];
+  tunables: DetectorTunable[];
+  fired_count: number;
+  last_fired: string | null;
+}
+
+export interface DetectorsResponse {
+  detectors: Detector[];
+}
+
+// --- Bootstrap (Part C item 2) -----------------------------------------
+
+export interface BootstrapResponse {
+  token: string;
+  version: string;
+  capture_mode: CaptureMode;
+}

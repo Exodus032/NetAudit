@@ -1,0 +1,94 @@
+.posture-hero {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 24px;
+  align-items: center;
+}
+
+.posture-hero-score {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
+  padding: 12px;
+}
+
+.posture-hero-figure {
+  font-size: 56px;
+  font-weight: 700;
+  line-height: 1;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.posture-hero-grade {
+  font-size: 20px;
+  font-weight: 700;
+  border: 2px solid currentColor;
+  border-radius: var(--radius-md);
+  padding: 2px 8px;
+  margin-top: 2px;
+}
+
+.posture-hero-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.posture-hero-generated {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.posture-hero-counts {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 8px;
+  font-size: 11px;
+}
+
+.posture-count {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-weight: 600;
+}
+.posture-count-pass { color: var(--status-good); }
+.posture-count-warn { color: var(--status-warning); }
+.posture-count-fail { color: var(--status-critical); }
+.posture-count-neutral { color: var(--text-muted); }
+
+.posture-hero-categories {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.posture-cat-row {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.posture-cat-label {
+  color: var(--text-secondary);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 760px) {
+  .posture-hero {
+    grid-template-columns: 1fr;
+  }
+}

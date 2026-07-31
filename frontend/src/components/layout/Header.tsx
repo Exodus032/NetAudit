@@ -9,6 +9,8 @@ const VIEW_TITLES: Record<string, string> = {
   traffic: "Traffic log",
   connections: "Connections & devices",
   recommendations: "Recommended actions",
+  posture: "Security posture",
+  threats: "Threats",
 };
 
 const STATE_LABEL: Record<ConnectionState, string> = {

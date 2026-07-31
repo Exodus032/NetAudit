@@ -1,12 +1,14 @@
 import "./Sidebar.css";
 
-export type ViewId = "overview" | "traffic" | "connections" | "recommendations";
+export type ViewId = "overview" | "traffic" | "connections" | "recommendations" | "posture" | "threats";
 
 const NAV_ITEMS: { id: ViewId; label: string; icon: string }[] = [
   { id: "overview", label: "Overview", icon: "▤" },
   { id: "traffic", label: "Traffic log", icon: "≡" },
   { id: "connections", label: "Connections & devices", icon: "⇄" },
   { id: "recommendations", label: "Recommended actions", icon: "◆" },
+  { id: "posture", label: "Security posture", icon: "⛨" },
+  { id: "threats", label: "Threats", icon: "⚠" },
 ];
 
 export function Sidebar({ active, onChange }: { active: ViewId; onChange: (v: ViewId) => void }) {

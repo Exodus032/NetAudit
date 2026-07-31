@@ -1,7 +1,17 @@
 // Mock REST handlers — mirror docs/API_CONTRACT.md response shapes exactly,
 // reading/writing the shared in-memory store in ./store.ts.
 
-import { state, computeStatsSummary, setStatsWindow, randFloat } from "./store";
+import {
+  state,
+  computeStatsSummary,
+  setStatsWindow,
+  computePostureCategories,
+  computePostureCounts,
+  computePostureScore,
+  computeSecurityScore,
+  gradeFor,
+} from "./store";
+import { buildPostureChecks } from "./postureCatalog";
 import { mulberry32, randInt } from "./rng";
 import type {
   ConnectionsResponse,
@@ -9,9 +19,17 @@ import type {
   DismissResponse,
   HealthResponse,
   InterfacesResponse,
+  PostureQuery,
+  PostureResponse,
   RecommendationsResponse,
+  SecurityScoreResponse,
   StatsSummary,
   StatsWindow,
+  Threat,
+  ThreatAckResponse,
+  ThreatsQuery,
+  ThreatsResponse,
+  ThreatTimelineResponse,
   TimeseriesResponse,
   TopBy,
   TopResponse,
@@ -52,43 +70,60 @@ const WINDOW_MS: Record<StatsWindow, number> = {
   all: 7 * 24 * 60 * 60_000,
 };
 
-// Anchored to bits/sec at roughly the same order of magnitude as the mock
-// ticker's actual generation rate (~1-8 log entries/sec at ~64-1500 bytes each,
-// averaging ~28 Kbps combined) rather than an arbitrary MB-scale figure, so
-// buckets of any width scale consistently AND match the live tail (useTimeseries
-// appends points derived from the real throughput_bps_in/out the stats summary
-// reports, which is itself now a short trailing-slice rate — see
-// computeStatsSummary's THROUGHPUT_SLICE_MS in mocks/store.ts). Without this
-// alignment, a fabricated high-bandwidth historical curve and a modest
-// live-computed tail created a visible cliff where the two joined.
+// Aggregated directly from the real in-memory log (state.logs) rather than a
+// fabricated curve — this is the same source useTimeseries' live tail reads
+// via computeStatsSummary, so historical and live data are never two
+// unrelated series glued together at a seam. Buckets are contiguous, end at
+// "now", and zero-fill naturally (a bucket with no matching log rows sums to
+// 0) — including for older buckets beyond the seed data's ~2.5h span, which
+// is correct zero-fill behavior per the contract, not a bug.
 export function mockTimeseries(window: StatsWindow = "1h", bucket = 60): Promise<TimeseriesResponse> {
   const windowMs = WINDOW_MS[window] ?? WINDOW_MS["1h"];
   const bucketMs = Math.max(1000, bucket * 1000);
   const bucketCount = Math.min(720, Math.max(1, Math.round(windowMs / bucketMs)));
   const now = Date.now();
-  const rand = mulberry32(bucketCount * 7919 + bucket);
   const points: TimeseriesResponse["points"] = [];
-  let phase = rand() * Math.PI * 2;
+
   for (let i = bucketCount - 1; i >= 0; i--) {
-    const t = new Date(now - i * bucketMs - (now % bucketMs));
-    phase += 0.35;
-    const baseBps = 24_000 + Math.sin(phase) * 10_000; // ~14-34 Kbps
-    const noiseBps = randFloat(rand, -6_000, 9_000);
-    const bytesPerSecond = Math.max(0, baseBps + noiseBps) / 8;
-    const bytes_in = Math.round(bytesPerSecond * bucket);
-    const bytes_out = Math.max(0, Math.round(bytes_in * randFloat(rand, 0.12, 0.35)));
-    const tcp = Math.round((bytes_in + bytes_out) / 900);
-    const udp = Math.round(tcp * randFloat(rand, 0.1, 0.25));
+    const bucketEnd = now - i * bucketMs;
+    const bucketStart = bucketEnd - bucketMs;
+    let bytes_in = 0;
+    let bytes_out = 0;
+    let packets_in = 0;
+    let packets_out = 0;
+    let tcp = 0;
+    let udp = 0;
+    let icmp = 0;
+    let other = 0;
+    // state.logs is newest-first; a full scan per bucket is O(buckets*logs)
+    // which stays well under a millisecond at this data size (<=4000 logs,
+    // <=720 buckets) — simplicity over a two-pointer merge here.
+    for (const e of state.logs) {
+      const t = new Date(e.ts).getTime();
+      if (t >= bucketEnd) continue;
+      if (t < bucketStart) break; // everything after is older still
+      if (e.direction === "inbound") {
+        bytes_in += e.length;
+        packets_in += 1;
+      } else {
+        bytes_out += e.length;
+        packets_out += 1;
+      }
+      if (e.protocol === "tcp") tcp += 1;
+      else if (e.protocol === "udp") udp += 1;
+      else if (e.protocol === "icmp") icmp += 1;
+      else other += 1;
+    }
     points.push({
-      t: t.toISOString(),
+      t: new Date(bucketStart).toISOString(),
       bytes_in,
       bytes_out,
-      packets_in: Math.round(bytes_in / 700),
-      packets_out: Math.round(bytes_out / 700),
+      packets_in,
+      packets_out,
       tcp,
       udp,
-      icmp: randInt(rand, 0, 4),
-      other: randInt(rand, 0, 8),
+      icmp,
+      other,
     });
   }
   return delay({ window, bucket_seconds: bucket, points });
@@ -236,4 +271,110 @@ export function mockCaptureStop() {
 export function mockCaptureClear() {
   state.logs = [];
   return delay({ cleared: true });
+}
+
+// --- Part A: security posture -------------------------------------------
+
+export function mockPosture(query: PostureQuery = {}): Promise<PostureResponse> {
+  let checks = state.postureChecks;
+  if (query.category) checks = checks.filter((c) => c.category === query.category);
+  if (query.include_pass === false) checks = checks.filter((c) => c.status !== "pass");
+  // categories/counts/score reflect the FULL catalogue regardless of the
+  // category/include_pass filters, which only narrow the returned `checks`.
+  return delay({
+    generated_at: state.postureGeneratedAt,
+    scan_duration_ms: state.postureScanDurationMs,
+    score: computePostureScore(state.postureChecks),
+    grade: gradeFor(computePostureScore(state.postureChecks)),
+    counts: computePostureCounts(state.postureChecks),
+    categories: computePostureCategories(state.postureChecks),
+    checks,
+  });
+}
+
+export function mockPostureCheck(id: string) {
+  const check = state.postureChecks.find((c) => c.id === id);
+  return delay(check ?? null);
+}
+
+export function mockPostureRescan(_categories?: string[]): Promise<PostureResponse> {
+  // Mock rescan: refresh timestamps only, keep the same catalogue content so
+  // results stay stable and don't flicker between clicks — a real scan would
+  // re-run the actual checks.
+  const now = new Date().toISOString();
+  state.postureChecks = buildPostureChecks(now);
+  state.postureGeneratedAt = now;
+  state.postureScanDurationMs = randInt(mulberry32(Date.now() % 5003), 1400, 3200);
+  return mockPosture({});
+}
+
+export function mockSecurityScore(): Promise<SecurityScoreResponse> {
+  return delay(computeSecurityScore());
+}
+
+// --- Part B: threat detection --------------------------------------------
+
+function sortThreats(list: Threat[]): Threat[] {
+  const order = ["critical", "high", "medium", "low", "info"];
+  return [...list].sort((a, b) => order.indexOf(a.severity) - order.indexOf(b.severity) || b.confidence - a.confidence);
+}
+
+export function mockThreats(query: ThreatsQuery = {}): Promise<ThreatsResponse> {
+  let threats = state.threats;
+  const includeAck = query.include_acknowledged ?? false;
+  if (!includeAck) threats = threats.filter((t) => t.status !== "acknowledged");
+  if (query.severity) threats = threats.filter((t) => t.severity === query.severity);
+  if (query.category) threats = threats.filter((t) => t.category === query.category);
+  if (query.status) threats = threats.filter((t) => t.status === query.status);
+  if (query.since) threats = threats.filter((t) => t.last_seen >= query.since!);
+  if (query.until) threats = threats.filter((t) => t.last_seen <= query.until!);
+  if (query.q) {
+    const q = query.q.toLowerCase();
+    threats = threats.filter((t) => t.title.toLowerCase().includes(q) || t.summary.toLowerCase().includes(q));
+  }
+  threats = sortThreats(threats);
+  const total = threats.length;
+  const limit = Math.min(1000, query.limit ?? 100);
+  const offset = query.offset ?? 0;
+  return delay({ total, limit, offset, threats: threats.slice(offset, offset + limit) });
+}
+
+export function mockThreat(id: string) {
+  return delay(state.threats.find((t) => t.id === id) ?? null);
+}
+
+export function mockThreatAck(id: string, status: "acknowledged" | "active", note?: string): Promise<ThreatAckResponse> {
+  const threat = state.threats.find((t) => t.id === id);
+  if (threat) {
+    threat.status = status;
+    threat.acknowledged_note = status === "acknowledged" ? note : undefined;
+  }
+  return delay({ id, status, note });
+}
+
+const THREAT_WINDOW_MS: Record<StatsWindow, number> = {
+  "5m": 5 * 60_000,
+  "15m": 15 * 60_000,
+  "1h": 60 * 60_000,
+  "24h": 24 * 60 * 60_000,
+  all: 7 * 24 * 60 * 60_000,
+};
+
+export function mockThreatsTimeline(window: StatsWindow = "24h", bucket = 3600): Promise<ThreatTimelineResponse> {
+  const windowMs = THREAT_WINDOW_MS[window] ?? THREAT_WINDOW_MS["24h"];
+  const bucketMs = Math.max(1000, bucket * 1000);
+  const bucketCount = Math.min(720, Math.max(1, Math.round(windowMs / bucketMs)));
+  const now = Date.now();
+  const points: ThreatTimelineResponse["points"] = [];
+  for (let i = bucketCount - 1; i >= 0; i--) {
+    const bucketEnd = now - i * bucketMs;
+    const bucketStart = bucketEnd - bucketMs;
+    const counts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
+    for (const t of state.threats) {
+      const seen = new Date(t.first_seen).getTime();
+      if (seen >= bucketStart && seen < bucketEnd) counts[t.severity] += 1;
+    }
+    points.push({ t: new Date(bucketStart).toISOString(), ...counts });
+  }
+  return delay({ window, bucket_seconds: bucket, points });
 }

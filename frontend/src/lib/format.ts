@@ -11,6 +11,19 @@ export function formatBytes(bytes: number, decimals = 1): string {
   return `${sign}${value.toFixed(i === 0 ? 0 : decimals)} ${units[i]}`;
 }
 
+/** Formats two byte values sharing a single unit suffix, e.g. "16.6 / 36.1 KB"
+ * instead of "16.6 KB / 36.1 KB" — shorter, and reads fine since both values
+ * are the same kind of quantity side by side. Unit is chosen from whichever
+ * value is larger so the smaller one just gets more decimal precision. */
+export function formatBytesPair(a: number, b: number, decimals = 1): string {
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const larger = Math.max(Math.abs(a), Math.abs(b), 1);
+  const i = Math.min(units.length - 1, Math.floor(Math.log(larger) / Math.log(1024)));
+  const scale = 1024 ** i;
+  const fmt = (v: number) => (i === 0 ? Math.round(v / scale).toString() : (v / scale).toFixed(decimals));
+  return `${fmt(a)} / ${fmt(b)} ${units[i]}`;
+}
+
 export function formatBitrate(bps: number): string {
   if (!Number.isFinite(bps) || bps === 0) return "0 bps";
   const units = ["bps", "Kbps", "Mbps", "Gbps"];

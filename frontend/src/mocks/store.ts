@@ -2,7 +2,7 @@
 // (VITE_USE_MOCKS=1 or automatic fallback) and to drive the mock websocket so
 // the whole app is demoable with no backend running.
 
-import { mulberry32, pick, randInt, randFloat } from "./rng";
+import { mulberry32, pick, randInt } from "./rng";
 import {
   REMOTE_HOSTS,
   PROCESSES,
@@ -11,13 +11,22 @@ import {
   FLAGS_BY_PROTO,
   type HostFixture,
 } from "./fixtures";
+import { buildPostureChecks, categoriesFromChecks } from "./postureCatalog";
+import { buildThreats } from "./threatsCatalog";
 import type {
   CaptureStatus,
   Connection,
   Device,
+  Grade,
   NetInterface,
+  PostureCategorySummary,
+  PostureCheck,
+  PostureCounts,
   Recommendation,
   RiskLevel,
+  SecurityScoreResponse,
+  Severity,
+  Threat,
   TrafficLogEntry,
 } from "../api/types";
 
@@ -83,9 +92,25 @@ function makeLogEntry(tsOffsetMs: number): TrafficLogEntry {
 
 function seedLogs(count: number): TrafficLogEntry[] {
   const entries: TrafficLogEntry[] = [];
-  // spread seed entries over the last ~2 hours, oldest first here, then reverse
+  // Sparse history spread over ~2.5 hours for the traffic-log view's "hundreds
+  // of rows" feel.
   for (let i = count; i > 0; i--) {
     entries.push(makeLogEntry(-i * 14_000 - randInt(rand, 0, 4000)));
+  }
+  // Dense "warm start" tail at the SAME density the live ticker uses
+  // (1-8 entries/sec, tickLog in startMockTicker) covering the most recent
+  // ~15 seconds down to t=0. Without this, the sparse history above leaves a
+  // 14-18s gap between the newest seed row and page-load time — the
+  // throughput slice (computeStatsSummary's THROUGHPUT_SLICE_MS) would then
+  // read as a hard zero for the first several ticks after every load/reload,
+  // showing up as a cliff on the Overview throughput chart before the live
+  // ticker had a chance to backfill that window itself. Seeding the same
+  // density here closes that gap immediately.
+  for (let secAgo = 15; secAgo >= 0; secAgo--) {
+    const n = randInt(rand, 1, 8);
+    for (let k = 0; k < n; k++) {
+      entries.push(makeLogEntry(-secAgo * 1000 - randInt(rand, 0, 999)));
+    }
   }
   entries.sort((a, b) => a.ts.localeCompare(b.ts));
   return entries.reverse(); // newest first
@@ -416,6 +441,10 @@ export interface MockState {
   capture: CaptureStatus;
   interfaces: NetInterface[];
   startedAt: number;
+  postureChecks: PostureCheck[];
+  postureGeneratedAt: string;
+  postureScanDurationMs: number;
+  threats: Threat[];
 }
 
 const state: MockState = {
@@ -423,6 +452,10 @@ const state: MockState = {
   connections: Array.from({ length: 34 }, (_, i) => makeConnection(i)),
   devices: seedDevices(),
   recommendations: seedRecommendations(),
+  postureChecks: buildPostureChecks(new Date().toISOString()),
+  postureGeneratedAt: new Date().toISOString(),
+  postureScanDurationMs: 2140,
+  threats: buildThreats(),
   capture: {
     mode: "npcap",
     elevated: true,
@@ -616,6 +649,114 @@ export function setStatsWindow(w: "5m" | "15m" | "1h" | "24h" | "all") {
     w === "5m" ? 5 * 60_000 : w === "15m" ? 15 * 60_000 : w === "1h" ? 60 * 60_000 : w === "24h" ? 24 * 60 * 60_000 : 7 * 24 * 60 * 60_000;
 }
 
+// --- Posture scoring (Part A5 formula) ----------------------------------
+// score = 100 * (sum(weight for pass) + 0.5*sum(weight for warn)) /
+//         sum(weight for pass|warn|fail). error/skipped excluded both sides.
+
+export function gradeFor(score: number): Grade {
+  if (score >= 90) return "A";
+  if (score >= 80) return "B";
+  if (score >= 70) return "C";
+  if (score >= 60) return "D";
+  return "F";
+}
+
+function scoreChecks(checks: PostureCheck[]): number {
+  let numerator = 0;
+  let denominator = 0;
+  for (const c of checks) {
+    if (c.status === "error" || c.status === "skipped") continue;
+    denominator += c.score_weight;
+    if (c.status === "pass") numerator += c.score_weight;
+    else if (c.status === "warn") numerator += c.score_weight * 0.5;
+  }
+  if (denominator === 0) return 100;
+  return Math.round((100 * numerator) / denominator);
+}
+
+export function computePostureCounts(checks: PostureCheck[]): PostureCounts {
+  const counts: PostureCounts = { pass: 0, warn: 0, fail: 0, error: 0, skipped: 0 };
+  for (const c of checks) counts[c.status] += 1;
+  return counts;
+}
+
+export function computePostureCategories(checks: PostureCheck[]): PostureCategorySummary[] {
+  return categoriesFromChecks(checks).map((cat) => ({
+    id: cat.id,
+    label: cat.label,
+    score: scoreChecks(checks.filter((c) => c.category === cat.id)),
+    checks: cat.checkIds,
+  }));
+}
+
+export function computePostureScore(checks: PostureCheck[]): number {
+  return scoreChecks(checks);
+}
+
+// --- Composite security score (A5) --------------------------------------
+
+const SEVERITY_PENALTY: Record<Severity, number> = { critical: 25, high: 15, medium: 8, low: 3, info: 1 };
+const REC_SEVERITY_PENALTY: Record<Severity, number> = { critical: 20, high: 12, medium: 6, low: 2, info: 0.5 };
+
+function computeThreatsScore(): number {
+  let score = 100;
+  for (const t of state.threats) {
+    if (t.status !== "active") continue;
+    score -= SEVERITY_PENALTY[t.severity];
+  }
+  return Math.max(0, Math.round(score));
+}
+
+function computeHygieneScore(): number {
+  let score = 100;
+  for (const r of state.recommendations) {
+    if (r.dismissed) continue;
+    score -= REC_SEVERITY_PENALTY[r.severity];
+  }
+  return Math.max(0, Math.round(score));
+}
+
+export function computeSecurityScore(): SecurityScoreResponse {
+  const postureScore = computePostureScore(state.postureChecks);
+  const threatsScore = computeThreatsScore();
+  const hygieneScore = computeHygieneScore();
+  const overall = Math.round(postureScore * 0.4 + threatsScore * 0.35 + hygieneScore * 0.25);
+
+  const now = Date.now();
+  const historyRand = mulberry32(20260701);
+  const history = Array.from({ length: 24 }, (_, i) => {
+    const hoursAgo = 23 - i;
+    const drift = randInt(historyRand, -4, 4);
+    return { t: new Date(now - hoursAgo * 60 * 60_000).toISOString(), overall: Math.max(0, Math.min(100, overall + drift - Math.round(hoursAgo / 6))) };
+  });
+  history[history.length - 1] = { t: new Date(now).toISOString(), overall };
+
+  const failingChecks = state.postureChecks
+    .filter((c) => c.status === "fail" || c.status === "warn")
+    .sort((a, b) => b.score_weight - a.score_weight)
+    .slice(0, 3)
+    .map((c) => ({
+      id: c.id,
+      kind: "posture" as const,
+      title: c.remediation.commands.length ? c.remediation.summary : c.title,
+      score_gain: c.status === "fail" ? c.score_weight : Math.round(c.score_weight * 0.5),
+      effort: (c.remediation.commands.length ? "low" : "medium") as "low" | "medium" | "high",
+    }));
+
+  return {
+    generated_at: new Date(now).toISOString(),
+    overall,
+    grade: gradeFor(overall),
+    components: [
+      { id: "posture", label: "Host configuration", score: postureScore, weight: 0.4, grade: gradeFor(postureScore) },
+      { id: "threats", label: "Active threats", score: threatsScore, weight: 0.35, grade: gradeFor(threatsScore) },
+      { id: "hygiene", label: "Traffic hygiene", score: hygieneScore, weight: 0.25, grade: gradeFor(hygieneScore) },
+    ],
+    history,
+    top_wins: failingChecks,
+  };
+}
+
 let tickHandle: ReturnType<typeof setInterval> | null = null;
 let logTickHandle: ReturnType<typeof setInterval> | null = null;
 export function startMockTicker() {
@@ -640,4 +781,4 @@ export function stopMockTicker() {
   logTickHandle = null;
 }
 
-export { state, computeStatsSummary, randFloat };
+export { state, computeStatsSummary };

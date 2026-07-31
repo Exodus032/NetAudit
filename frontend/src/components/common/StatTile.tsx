@@ -38,8 +38,14 @@ export function StatTile({ label, value, sub, delta, deltaGoodDirection = "up", 
     <div className="stat-tile">
       <div className="stat-label">{label}</div>
       <div className="stat-row">
-        <div className="stat-value">{value}</div>
-        {trend && trend.length > 1 && <Sparkline values={trend} />}
+        <div className="stat-value" title={typeof value === "string" ? value : undefined}>
+          {value}
+        </div>
+        {trend && trend.length > 1 && (
+          <div className="stat-trend">
+            <Sparkline values={trend} width={44} height={20} />
+          </div>
+        )}
       </div>
       <div className="stat-footer">
         {deltaEl}

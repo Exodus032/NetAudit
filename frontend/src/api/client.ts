@@ -16,8 +16,16 @@ import {
   mockExportRows,
   mockHealth,
   mockInterfaces,
+  mockPosture,
+  mockPostureCheck,
+  mockPostureRescan,
   mockRecommendations,
+  mockSecurityScore,
   mockStatsSummary,
+  mockThreat,
+  mockThreatAck,
+  mockThreats,
+  mockThreatsTimeline,
   mockTimeseries,
   mockTop,
   mockTrafficLog,
@@ -31,9 +39,18 @@ import type {
   DismissResponse,
   HealthResponse,
   InterfacesResponse,
+  PostureCheck,
+  PostureQuery,
+  PostureResponse,
   RecommendationsResponse,
+  SecurityScoreResponse,
   StatsSummary,
   StatsWindow,
+  Threat,
+  ThreatAckResponse,
+  ThreatsQuery,
+  ThreatsResponse,
+  ThreatTimelineResponse,
   TimeseriesResponse,
   TopBy,
   TopResponse,
@@ -249,6 +266,74 @@ export function stopCapture(): Promise<CaptureStatus> {
 
 export function clearCapture(): Promise<{ cleared: boolean }> {
   return withFallback("/api/capture/clear", { method: "POST" }, mockCaptureClear);
+}
+
+// --- v2 security extensions (docs/API_CONTRACT_V2_SECURITY.md) -----------
+
+export function getPosture(query: PostureQuery = {}): Promise<PostureResponse> {
+  return withFallback(
+    `/api/posture${qs({ category: query.category, include_pass: query.include_pass })}`,
+    undefined,
+    () => mockPosture(query),
+  );
+}
+
+export function getPostureCheck(id: string): Promise<PostureCheck | null> {
+  return withFallback(`/api/posture/checks/${encodeURIComponent(id)}`, undefined, () => mockPostureCheck(id));
+}
+
+export function rescanPosture(categories?: string[]): Promise<PostureResponse> {
+  return withFallback(
+    "/api/posture/rescan",
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(categories ? { categories } : {}) },
+    () => mockPostureRescan(categories),
+  );
+}
+
+export function getSecurityScore(): Promise<SecurityScoreResponse> {
+  return withFallback("/api/security/score", undefined, mockSecurityScore);
+}
+
+function threatsQueryToParams(q: ThreatsQuery): Record<string, string | number | boolean | undefined> {
+  return {
+    limit: q.limit,
+    offset: q.offset,
+    severity: q.severity,
+    category: q.category,
+    status: q.status,
+    since: q.since,
+    until: q.until,
+    q: q.q,
+    include_acknowledged: q.include_acknowledged,
+  };
+}
+
+export function getThreats(query: ThreatsQuery = {}): Promise<ThreatsResponse> {
+  return withFallback(`/api/threats${qs(threatsQueryToParams(query))}`, undefined, () => mockThreats(query));
+}
+
+export function getThreat(id: string): Promise<Threat | null> {
+  return withFallback(`/api/threats/${encodeURIComponent(id)}`, undefined, () => mockThreat(id));
+}
+
+export function acknowledgeThreat(id: string, note?: string): Promise<ThreatAckResponse> {
+  return withFallback(
+    `/api/threats/${encodeURIComponent(id)}/acknowledge`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(note ? { note } : {}) },
+    () => mockThreatAck(id, "acknowledged", note),
+  );
+}
+
+export function unacknowledgeThreat(id: string, note?: string): Promise<ThreatAckResponse> {
+  return withFallback(
+    `/api/threats/${encodeURIComponent(id)}/unacknowledge`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(note ? { note } : {}) },
+    () => mockThreatAck(id, "active", note),
+  );
+}
+
+export function getThreatsTimeline(window: StatsWindow = "24h", bucket = 3600): Promise<ThreatTimelineResponse> {
+  return withFallback(`/api/threats/timeline${qs({ window, bucket })}`, undefined, () => mockThreatsTimeline(window, bucket));
 }
 
 export const isMockForced = FORCE_MOCKS;

@@ -7,6 +7,8 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  container-type: inline-size;
+  container-name: stat-tile;
 }
 
 .stat-label {
@@ -20,16 +22,42 @@
   align-items: flex-end;
   justify-content: space-between;
   gap: 8px;
+  min-width: 0;
 }
 
 .stat-value {
-  font-size: 24px;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 21px;
   font-weight: 600;
   color: var(--text-primary);
-  line-height: 1.1;
-  white-space: nowrap;
+  line-height: 1.15;
+  /* Never silently truncate a number: wrap instead, with a 2-line safety
+     cap so a pathological value can't blow out the tile's height. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+.stat-trend {
+  flex: none;
+}
+
+/* Narrow tiles (small viewports, or many tiles per row) get a smaller value
+   size rather than wrapping/clamping — scales down before it ever needs to
+   truncate. */
+@container stat-tile (max-width: 190px) {
+  .stat-value {
+    font-size: 17px;
+  }
+}
+@container stat-tile (max-width: 150px) {
+  .stat-value {
+    font-size: 15px;
+  }
 }
 
 .stat-footer {

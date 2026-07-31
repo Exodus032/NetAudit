@@ -1,0 +1,60 @@
+.posture-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.posture-filter-select {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.posture-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.posture-toolbar-spacer {
+  flex: 1;
+}
+
+.posture-rescan-btn {
+  background: var(--series-1);
+  border: none;
+  border-radius: var(--radius-md);
+  color: #fff;
+  padding: 7px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.posture-rescan-btn:hover {
+  filter: brightness(1.1);
+}
+.posture-rescan-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.posture-category-group {
+  margin-bottom: 18px;
+}
+
+.posture-category-heading {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
