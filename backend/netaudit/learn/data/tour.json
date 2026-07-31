@@ -1,0 +1,180 @@
+{
+  "steps": [
+    {
+      "id": "welcome",
+      "order": 1,
+      "view": "overview",
+      "target": "[data-tour='stat-tiles']",
+      "title": "Start here",
+      "body": "These numbers summarise everything happening on your network right now. Total traffic is how much has moved; active flows is how many conversations are currently open. Nothing here is a verdict yet -- it's just what NetAudit has actually observed.",
+      "glossary_terms": [
+        "flow",
+        "bandwidth"
+      ],
+      "action_hint": null
+    },
+    {
+      "id": "encrypted-split",
+      "order": 2,
+      "view": "overview",
+      "target": "[data-tour='encrypted-split']",
+      "title": "Encrypted vs plaintext",
+      "body": "This panel splits your traffic by whether it can be read in transit. Encrypted traffic (TLS/HTTPS) hides content but not metadata -- who you talked to and how much is still visible. Plaintext can be read in full by anyone on the path.",
+      "glossary_terms": [
+        "encryption",
+        "plaintext",
+        "tls"
+      ],
+      "action_hint": null
+    },
+    {
+      "id": "security-score",
+      "order": 3,
+      "view": "overview",
+      "target": "[data-tour='security-score']",
+      "title": "The security score",
+      "body": "One number, A to F, built from your host posture, active threats, and hygiene recommendations. It's a starting point for 'how am I doing', not the whole picture -- the posture and threats views behind it are where the actual detail lives.",
+      "glossary_terms": [],
+      "action_hint": null
+    },
+    {
+      "id": "capture-tier-banner",
+      "order": 4,
+      "view": "overview",
+      "target": "[data-tour='capture-tier-banner']",
+      "title": "What tier you're capturing on",
+      "body": "NetAudit degrades gracefully depending on what your machine allows: full packet capture with Npcap and admin rights, raw IPv4 headers with admin only, or connection-table sampling with neither. This banner tells you which one is active and what you're missing because of it -- worth reading before you trust an absence of findings as 'nothing's wrong'.",
+      "glossary_terms": [
+        "pcap",
+        "promiscuous_mode"
+      ],
+      "action_hint": null
+    },
+    {
+      "id": "traffic-log-intro",
+      "order": 5,
+      "view": "traffic-log",
+      "target": "[data-tour='traffic-log-table']",
+      "title": "Every observed conversation",
+      "body": "Every packet or flow NetAudit has seen, live and searchable: time, protocol, direction, peer, resolved hostname, owning process, bytes, and a risk indicator. This is the raw material everything else in the tool is built from.",
+      "glossary_terms": [
+        "packet",
+        "flow",
+        "port"
+      ],
+      "action_hint": null
+    },
+    {
+      "id": "traffic-log-filter",
+      "order": 6,
+      "view": "traffic-log",
+      "target": "[data-tour='traffic-log-filter']",
+      "title": "Filtering down to what matters",
+      "body": "With this much traffic, filtering is how you actually find anything. Try narrowing to one protocol or one process and see how the table updates instantly.",
+      "glossary_terms": [],
+      "action_hint": "try filtering by protocol"
+    },
+    {
+      "id": "traffic-log-detail",
+      "order": 7,
+      "view": "traffic-log",
+      "target": "[data-tour='traffic-log-row-detail']",
+      "title": "Opening a row",
+      "body": "Click any row to open its full detail: every field NetAudit captured about that one conversation, not just what fits in the table.",
+      "glossary_terms": [],
+      "action_hint": "click a row to open its detail drawer"
+    },
+    {
+      "id": "connections-intro",
+      "order": 8,
+      "view": "connections",
+      "target": "[data-tour='connections-table']",
+      "title": "Active connections right now",
+      "body": "A live view of open connections, grouped by process -- what's talking to what, right now, rather than the traffic log's full history.",
+      "glossary_terms": [
+        "flow"
+      ],
+      "action_hint": null
+    },
+    {
+      "id": "connections-risk",
+      "order": 9,
+      "view": "connections",
+      "target": "[data-tour='connections-risk-column']",
+      "title": "Reading the risk column",
+      "body": "Each connection carries a rough risk indicator -- external vs local, plaintext vs encrypted, recognised port vs not. It's a prompt to look closer, not a verdict on its own; the explain endpoint behind any flagged item will tell you exactly why it's flagged.",
+      "glossary_terms": [
+        "false_positive"
+      ],
+      "action_hint": null
+    },
+    {
+      "id": "recommendations-intro",
+      "order": 10,
+      "view": "recommendations",
+      "target": "[data-tour='recommendations-list']",
+      "title": "Hygiene recommendations",
+      "body": "Advice derived from what NetAudit actually observed on your network -- not a generic checklist. Each one explains what was seen, why it matters, and exactly what to do about it.",
+      "glossary_terms": [],
+      "action_hint": null
+    },
+    {
+      "id": "recommendations-fix",
+      "order": 11,
+      "view": "recommendations",
+      "target": "[data-tour='recommendation-actions']",
+      "title": "The fix is yours to run",
+      "body": "NetAudit never runs a remediation command itself. Every fix here is copy-pasteable text you review and run yourself -- open one and see the exact command it suggests.",
+      "glossary_terms": [],
+      "action_hint": "open one and copy its fix command"
+    },
+    {
+      "id": "posture-intro",
+      "order": 12,
+      "view": "posture",
+      "target": "[data-tour='posture-score']",
+      "title": "Host security posture",
+      "body": "Around 40 read-only checks of how this machine itself is configured -- firewall, SMB, remote access, accounts, and more -- each reporting what was found, why it matters, and how to fix it.",
+      "glossary_terms": [
+        "firewall"
+      ],
+      "action_hint": null
+    },
+    {
+      "id": "posture-categories",
+      "order": 13,
+      "view": "posture",
+      "target": "[data-tour='posture-category-list']",
+      "title": "Browsing by category",
+      "body": "Checks are grouped into ten categories. A failing check here is a fact about this machine's configuration, not a behaviour observed on the wire -- that's what makes it different from a threat finding.",
+      "glossary_terms": [],
+      "action_hint": null
+    },
+    {
+      "id": "threats-intro",
+      "order": 14,
+      "view": "threats",
+      "target": "[data-tour='threats-list']",
+      "title": "Behavioural threat detection",
+      "body": "22 detectors watching captured traffic for patterns associated with real attacker techniques -- beaconing, scanning, spoofing, lateral movement, and more -- each mapped to a MITRE ATT&CK technique where one genuinely fits.",
+      "glossary_terms": [
+        "mitre_attack",
+        "false_positive"
+      ],
+      "action_hint": null
+    },
+    {
+      "id": "threats-detail",
+      "order": 15,
+      "view": "threats",
+      "target": "[data-tour='threat-detail-drawer']",
+      "title": "Reading a threat's reasoning",
+      "body": "Every threat shows its actual numbers, not just a label -- click one to see exactly what was measured and why it crossed the threshold, plus its documented false-positive causes, so you can judge it yourself rather than take the severity on faith.",
+      "glossary_terms": [
+        "mitre_attack",
+        "false_positive"
+      ],
+      "action_hint": "click a threat to see its evidence and worked reasoning"
+    }
+  ]
+}

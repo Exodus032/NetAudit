@@ -41,7 +41,7 @@ def _error(status_code: int, code: str, message: str) -> HTTPException:
 @router.get("/api/glossary")
 def list_glossary():
     service = LearnService()
-    return {"terms": [t.model_dump(exclude_none=True) for t in service.list_glossary()]}
+    return {"terms": [t.model_dump() for t in service.list_glossary()]}
 
 
 @router.get("/api/glossary/{term_id}")
@@ -50,7 +50,7 @@ def get_glossary_term(term_id: str):
     term = service.get_glossary_term(term_id)
     if term is None:
         raise _error(404, "not_found", f"No glossary term '{term_id}'")
-    return term.model_dump(exclude_none=True)
+    return term.model_dump()
 
 
 @router.get("/api/explain/{kind}/{item_id}")
@@ -61,19 +61,19 @@ def explain(kind: str, item_id: str):
     explanation = service.get_explanation(kind, item_id)
     if explanation is None:
         raise _error(404, "not_found", f"No {kind} explanation for '{item_id}'")
-    return explanation.model_dump(exclude_none=True)
+    return explanation.model_dump()
 
 
 @router.get("/api/tour")
 def get_tour():
     service = LearnService()
-    return {"steps": [s.model_dump(exclude_none=True) for s in service.get_tour()]}
+    return {"steps": [s.model_dump() for s in service.get_tour()]}
 
 
 @router.get("/api/lessons")
 def list_lessons():
     service = LearnService()
-    return {"lessons": [l.model_dump(exclude_none=True) for l in service.list_lessons()]}
+    return {"lessons": [l.model_dump() for l in service.list_lessons()]}
 
 
 @router.get("/api/lessons/{lesson_id}")
@@ -82,7 +82,7 @@ def get_lesson(lesson_id: str):
     lesson = service.get_lesson(lesson_id)
     if lesson is None:
         raise _error(404, "not_found", f"No lesson '{lesson_id}'")
-    return lesson.model_dump(exclude_none=True)
+    return lesson.model_dump()
 
 
 @router.get("/api/findings/prioritised")

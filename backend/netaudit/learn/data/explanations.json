@@ -1,0 +1,1488 @@
+{
+  "explanations": [
+    {
+      "kind": "detector",
+      "id": "c2_beaconing",
+      "title": "What 'C2 beaconing' means",
+      "plain": "Malware usually needs to phone home to ask for instructions. Because it's a program executing a timer, not a person clicking around, it tends to check in on a fixed schedule -- every 60 seconds, almost exactly. People browsing the web don't produce traffic that regular. This detector looks for that machine-like regularity in outbound contact with a single peer.",
+      "how_it_decides": "For each peer this host has contacted at least min_contacts (default 8) times, it measures the coefficient of variation (CV -- standard deviation divided by mean) of the gaps between contacts, and separately the CV of the payload sizes. It fires when interval CV is at or below max_interval_cv (default 0.15) and payload CV is at or below max_payload_cv (default 0.35). Port 123 (NTP) is excluded by default via ignore_ports, since NTP is regular by design and not a useful signal here.",
+      "what_would_make_it_wrong": "Software update checkers, telemetry/analytics agents, and keepalive-polling chat or mail clients all beacon on a fixed interval with similarly-sized requests -- regularity alone is not proof of C2, which is why this reports a confidence rather than a hard verdict. It is also automatically disabled on the polling capture tier: a connection table sampled on a fixed interval makes every long-lived connection look perfectly regular regardless of what it actually is, so the timing signal is meaningless there and the detector reports itself as disabled rather than producing false confidence.",
+      "glossary_terms": [
+        "c2",
+        "beaconing",
+        "baseline"
+      ],
+      "worked_example": {
+        "scenario": "A process contacts 45.33.32.156 nine times: 14:00:00, 14:01:00, 14:02:01, 14:03:00, 14:03:59, 14:05:01, 14:06:00, 14:07:00, 14:08:01, each carrying 512-518 bytes.",
+        "walkthrough": [
+          "Gaps between contacts: 60, 61, 59, 61, 62, 59, 60, 61 seconds -- 8 gaps from 9 contacts.",
+          "Mean gap = 60.4s. Standard deviation ~= 1.06s. Interval CV = 1.06/60.4 ~= 0.018 -- well under the 0.15 threshold.",
+          "Payload sizes 512-518 bytes: mean ~=515, stdev ~=2.4, payload CV ~=0.0047 -- well under 0.35.",
+          "9 contacts >= min_contacts (8), both CVs pass, port is not 123 -- the detector fires."
+        ]
+      },
+      "learn_more": "MITRE ATT&CK TA0011/T1071.001"
+    },
+    {
+      "kind": "detector",
+      "id": "dns_tunneling",
+      "title": "What 'DNS tunneling' means",
+      "plain": "DNS is one of the few protocols almost never blocked outbound. That makes it an attractive channel for smuggling a command-and-control link or slow data exfiltration past network controls, by hiding the real payload inside query names that still look, superficially, like DNS traffic.",
+      "how_it_decides": "Per parent domain, this detector computes the ratio of unique subdomains to total queries, the average Shannon entropy of the leftmost label, and the ratio of TXT/NULL record queries to total queries -- all against a small bundled allowlist of legitimate high-volume CDN/telemetry domains, to cut routine noise. It fires once query volume reaches min_queries (default 30) and any of: unique-subdomain ratio >= min_unique_ratio (0.6), average entropy >= min_entropy (3.4), or TXT/NULL ratio >= min_txt_null_ratio (0.5).",
+      "what_would_make_it_wrong": "Some legitimate update, telemetry, and ad-SDK services genuinely generate many unique, high-entropy subdomains as part of normal operation -- check the allowlist before treating a hit as confirmed tunneling. More fundamentally on this tool today: the capture layer records that a DNS-shaped conversation happened (peer, port, byte counts) but does not parse the query name, type, or record data out of the payload. Without that, this detector has no query name or record type to evaluate at all. It is fully implemented and unit-tested against synthetic DNS records, but it will not fire on real captured traffic until a DNS payload parser exists -- reporting it as if it were live-active would be worse than reporting it as inert.",
+      "glossary_terms": [
+        "dns",
+        "dns_tunneling",
+        "exfiltration",
+        "false_positive"
+      ],
+      "worked_example": {
+        "scenario": "A process queries 40 distinct random-looking subdomains of a single parent domain (e.g. 8f3a91.data.example-cdn.net) inside a few minutes, most as TXT records.",
+        "walkthrough": [
+          "40 queries >= min_queries (30).",
+          "40 unique subdomains out of 40 queries -> unique ratio = 1.0, above the 0.6 threshold.",
+          "Average leftmost-label entropy for random 6-character hex strings is roughly 3.9-4.0 bits/char, above the 3.4 threshold.",
+          "If most of these are TXT queries, the TXT/NULL ratio also clears 0.5.",
+          "Multiple independent signals agree -- if this were fed real DnsRecord data (it currently is not, on live traffic), it would fire."
+        ]
+      },
+      "learn_more": "MITRE ATT&CK TA0011/T1071.004"
+    },
+    {
+      "kind": "detector",
+      "id": "dga_domains",
+      "title": "What 'DGA domain' detection means",
+      "plain": "Some malware doesn't hardcode its command-and-control domain -- if it did, blocking that one domain would kill the infection. Instead it runs a domain generation algorithm that produces a large batch of candidate domain names on a schedule, and the attacker only needs to register one of them. Those generated names tend to look distinctly unlike names a person or a normal service would register.",
+      "how_it_decides": "Evaluated per registrable domain (the last two labels, e.g. example.com, not a subdomain), the detector checks label length against min_label_length (default 10), Shannon entropy against min_entropy (3.3), and the longest run of consecutive consonants against min_consonant_run (5) -- unpronounceable strings tend to have long consonant runs that real words and brand names avoid. It only fires once a single process has produced at least min_domains (3) qualifying domains, so one odd-looking domain isn't enough on its own.",
+      "what_would_make_it_wrong": "Hashed asset URLs, CDN edge hostnames, and some randomly-generated tracking subdomains have similar entropy to genuine DGA output and can trip this. It deliberately looks only at registrable domains and skips the CDN/telemetry allowlist that dns_tunneling uses, so a novel legitimate high-entropy domain can still cause a hit. It shares dns_tunneling's live-traffic limitation: it needs the actual queried domain name from the DNS payload, which this tool's capture layer does not currently parse out of real traffic -- inert on live captures, fully exercised in tests against synthetic domain lists.",
+      "glossary_terms": [
+        "dns",
+        "dga",
+        "c2",
+        "false_positive"
+      ],
+      "worked_example": {
+        "scenario": "A process resolves three domains in one session: xqzfpltbvk.net, wjkrmxpddz.net, hbnvqxztlp.net.",
+        "walkthrough": [
+          "Each label is 10 characters, meeting min_label_length (10).",
+          "Each is essentially random consonant-heavy text: entropy per label is roughly 3.3-3.5 bits/char, at or above 3.3.",
+          "'xqzfpltbvk' has a run of 6+ consecutive consonants, well above min_consonant_run (5).",
+          "3 domains from one process meets min_domains (3) -- if fed real query names (currently not available live), it would fire."
+        ]
+      },
+      "learn_more": "MITRE ATT&CK TA0011/T1568.002"
+    },
+    {
+      "kind": "detector",
+      "id": "dns_exfil_volume",
+      "title": "What 'DNS exfiltration volume' means",
+      "plain": "DNS is meant to carry short lookups, not bulk data -- a normal device sends a trickle of DNS bytes compared to its total traffic. If a large share of a process's outbound bytes are travelling over DNS instead of its normal protocols, that imbalance itself is the signal, regardless of what the queries look like.",
+      "how_it_decides": "This uses a fixed expected-ratio heuristic rather than a learned baseline: DNS is a low-bandwidth control-plane protocol by design, so a large fraction of a process's egress moving over it is abnormal regardless of that process's own history. It fires when DNS bytes exceed max_normal_ratio (default 0.1, i.e. 10%) of a process's total egress, and the absolute DNS byte count clears min_dns_bytes (50,000) over at least min_queries (20) queries -- the absolute floor exists so a process with almost no other traffic doesn't trip this on a high ratio built from a tiny number of bytes.",
+      "what_would_make_it_wrong": "Enterprise EDR or DNS-filtering agents can legitimately generate large DNS volumes as part of their normal job. A process with almost no other network activity will show a high DNS ratio on entirely ordinary DNS use -- always check the absolute byte count (min_dns_bytes), not just the ratio, before treating a hit as meaningful. This detector needs DNS-attributable byte volume derived from parsed DNS records, which this tool's capture layer does not currently produce from live traffic -- like the other DNS detectors, it is inert on real captures today.",
+      "glossary_terms": [
+        "dns",
+        "exfiltration",
+        "baseline"
+      ],
+      "worked_example": {
+        "scenario": "A process sends 480,000 bytes total in a window; 60,000 of that is DNS traffic over 25 queries.",
+        "walkthrough": [
+          "DNS ratio = 60,000 / 480,000 = 0.125 -- above the 0.1 (10%) threshold.",
+          "60,000 bytes >= min_dns_bytes (50,000).",
+          "25 queries >= min_queries (20).",
+          "All three conditions hold -- if this were live DNS-attributed data (currently not produced on live traffic), it would fire."
+        ]
+      },
+      "learn_more": "MITRE ATT&CK TA0010/T1048.003"
+    },
+    {
+      "kind": "detector",
+      "id": "data_exfiltration",
+      "title": "What 'data exfiltration' detection means",
+      "plain": "A single process suddenly sending far more data to one peer than it ever has before is one of the more reliable signals that something unusual is happening -- but 'far more than usual' only means something once you know what usual is for that specific process and peer.",
+      "how_it_decides": "Unlike dns_exfil_volume's fixed ratio, this compares egress volume against a learned baseline for that specific process/peer pair (see baseline.py), and does not fire at all until the baseline has min_samples (default 5) historical flows to judge against. It fires when the current transfer's z-score against that baseline exceeds min_zscore (4.0), or -- when the baseline has close to zero variance, where a z-score isn't meaningful -- when it exceeds min_ratio (5.0) times the baseline's typical size. min_bytes (5,000,000) is an absolute floor regardless of baseline: a tiny transfer never fires no matter how unusual it is relatively.",
+      "what_would_make_it_wrong": "Backup software, a large one-off download or upload the user initiated deliberately, cloud sync catching up after being offline, and VM/container image pulls are all legitimate and can still be far above a process's typical baseline -- this measures 'unusual for this process', not 'malicious'.",
+      "glossary_terms": [
+        "exfiltration",
+        "baseline",
+        "false_positive"
+      ],
+      "worked_example": {
+        "scenario": "A process's baseline transfer to a peer has averaged 2 MB with very little variance over the last week (12 samples). Today it sends 45 MB in one transfer.",
+        "walkthrough": [
+          "12 samples >= min_samples (5), so the baseline is usable.",
+          "45 MB is roughly 22x the 2 MB baseline average -- well above min_ratio (5.0), used here because the low-variance baseline makes a raw z-score unstable.",
+          "45,000,000 bytes >= min_bytes (5,000,000), clearing the absolute floor.",
+          "All conditions hold -- the detector fires, though the false positives above (backups, deliberate large downloads) are exactly this shape too."
+        ]
+      },
+      "learn_more": "MITRE ATT&CK TA0010/T1048"
+    },
+    {
+      "kind": "detector",
+      "id": "off_hours_transfer",
+      "title": "What 'off-hours transfer' detection means",
+      "plain": "A large transfer at 3am from a process that has never once been active at 3am in its recorded history is unusual for a different reason than raw volume: it's about *when*, not just *how much*.",
+      "how_it_decides": "Also baseline-gated (min_samples, default 10, historical flows over lookback_hours, default 336 = 14 days), this only evaluates hours of the day that the process's history says it has never used at all -- not 'unusually low activity', but genuinely zero prior activity in that hour-of-day bucket. It fires when a transfer in one of those never-used hours exceeds min_bytes (1,000,000).",
+      "what_would_make_it_wrong": "Scheduled backups, overnight OS/app updates, sync or replication jobs, and timezone-shifted remote work are all classic off-hours legitimate traffic. A newly-installed backup tool looks identical to this on its first night, because it has no baseline history yet to be 'off-hours' relative to -- the detector cannot distinguish 'first run of something new and scheduled' from 'first sign of something malicious'.",
+      "glossary_terms": [
+        "exfiltration",
+        "baseline",
+        "false_positive"
+      ],
+      "worked_example": {
+        "scenario": "A process has 10 historical flows, every one of them between 09:00 and 18:00. At 03:14 it sends 3.5 MB.",
+        "walkthrough": [
+          "10 samples >= min_samples (10), history is usable.",
+          "History shows zero activity in the 03:00 hour bucket across the whole lookback_hours (336h / 14 days) window.",
+          "3,500,000 bytes >= min_bytes (1,000,000).",
+          "An unprecedented hour plus a transfer over the byte floor -- the detector fires."
+        ]
+      },
+      "learn_more": "MITRE ATT&CK TA0010/T1029"
+    },
+    {
+      "kind": "detector",
+      "id": "port_scan_outbound",
+      "title": "What 'outbound port scan' detection means",
+      "plain": "One host quickly trying many different ports on the same peer has no everyday-browsing explanation -- normal traffic to a peer usually concentrates on one or two ports (the service you're actually using), not a spread across dozens.",
+      "how_it_decides": "Fires when this host touches at least min_ports (default 15) distinct ports on one peer within max_span_seconds (default 300, i.e. a 5-minute window).",
+      "what_would_make_it_wrong": "Vulnerability scanners you run yourself, network monitoring tools doing legitimate port checks, and some P2P or game traffic hunting for an open relay/peer port can all produce this exact shape.",
+      "glossary_terms": [
+        "port_scan",
+        "port"
+      ],
+      "worked_example": {
+        "scenario": "This host contacts 45.33.32.156 on ports 21, 22, 23, 25, 53, 80, 110, 143, 443, 445, 993, 995, 3306, 3389, 8080, all within a 40-second span.",
+        "walkthrough": [
+          "15 distinct ports touched -- meets min_ports (15).",
+          "40 seconds is well under max_span_seconds (300).",
+          "The detector fires on this host as the source of the scan."
+        ]
+      },
+      "learn_more": "MITRE ATT&CK TA0007/T1046"
+    },
+    {
+      "kind": "detector",
+      "id": "port_scan_inbound",
+      "title": "What 'inbound port scan' detection means",
+      "plain": "The mirror image of port_scan_outbound: instead of this host probing many ports on a peer, one peer is probing many ports on this host -- someone else's reconnaissance, not this machine's.",
+      "how_it_decides": "Same shape as the outbound version: fires when one peer touches at least min_ports (default 15) distinct ports on this host within max_span_seconds (default 300 seconds).",
+      "what_would_make_it_wrong": "Mass internet scanners -- research projects, security vendors, and less benign operators alike -- constantly sweep the public IPv4 address space essentially at random; being scanned from the internet is closer to background noise than a targeted event. Check /api/intel/lookup on the source before escalating.",
+      "glossary_terms": [
+        "port_scan",
+        "port"
+      ],
+      "worked_example": {
+        "scenario": "A peer at 203.0.113.44 touches 18 different ports on this host within 90 seconds.",
+        "walkthrough": [
+          "18 distinct ports >= min_ports (15).",
+          "90 seconds is well under max_span_seconds (300).",
+          "The detector fires with 203.0.113.44 as the scanning peer."
+        ]
+      },
+      "learn_more": "MITRE ATT&CK TA0043/T1595.001"
+    },
+    {
+      "kind": "detector",
+      "id": "host_sweep",
+      "title": "What 'host sweep' detection means",
+      "plain": "A single peer contacting many different hosts on your subnet in a short window looks like someone mapping out what else is on the network, rather than talking to one specific device it already knows about.",
+      "how_it_decides": "Fires when one peer contacts at least min_hosts (default 5) distinct hosts on the local subnet within max_span_seconds (default 300 seconds).",
+      "what_would_make_it_wrong": "Network management tools, the router or DHCP server itself doing routine housekeeping, backup software performing LAN discovery, and asset-inventory scanners are all common, entirely benign causes of exactly this pattern.",
+      "glossary_terms": [
+        "port_scan",
+        "subnet"
+      ],
+      "worked_example": {
+        "scenario": "A peer on the LAN contacts 192.168.1.10, .12, .15, .20, .27, and .31 within two minutes.",
+        "walkthrough": [
+          "6 distinct hosts contacted -- meets min_hosts (5).",
+          "2 minutes (120s) is under max_span_seconds (300).",
+          "The detector fires, flagging that peer as sweeping the subnet."
+        ]
+      },
+      "learn_more": "MITRE ATT&CK TA0043/T1595.001"
+    },
+    {
+      "kind": "detector",
+      "id": "arp_spoofing",
+      "title": "What 'ARP spoofing' detection means",
+      "plain": "ARP has no authentication: any device can claim to own any IP address on the segment, and nothing stops it. This detector watches the actual mapping between IP addresses and MAC addresses for the two shapes a real spoofing attack produces.",
+      "how_it_decides": "It fires on either of two conditions: one MAC address claiming at least min_ips_per_mac (default 2) distinct IP addresses, or -- treated separately and more severely regardless of the tunable -- the gateway's IP address suddenly resolving to a different MAC address than it did before. A 600-second cooldown prevents the same ongoing condition from re-firing repeatedly. Visibility here comes from polling the OS's own ARP cache for changes, which is real evidence, not a synthetic proxy.",
+      "what_would_make_it_wrong": "Hypervisors and VM hosts commonly answer for several guest IP addresses from one host MAC, entirely legitimately, as do routers doing NAT/failover. A gateway MAC change is also expected and harmless right after replacing or rebooting the actual router -- context (did anything change on this network on purpose) matters as much as the raw signal.",
+      "glossary_terms": [
+        "arp",
+        "arp_spoofing",
+        "mitm",
+        "gateway"
+      ],
+      "worked_example": {
+        "scenario": "The ARP cache shows MAC AA:BB:CC:11:22:33 has answered for both 192.168.1.1 (the gateway) and 192.168.1.50 within the same polling window, where 192.168.1.1 previously resolved to a different MAC.",
+        "walkthrough": [
+          "One MAC now claims 2 distinct IPs -- meets min_ips_per_mac (2).",
+          "Separately, the gateway's MAC changed from its previous known value -- the more severe condition on its own.",
+          "Either condition alone would fire; both together raise confidence further."
+        ]
+      },
+      "learn_more": "MITRE ATT&CK TA0006/T1557.002"
+    },
+    {
+      "kind": "detector",
+      "id": "mac_flapping",
+      "title": "What 'MAC flapping' detection means",
+      "plain": "One IP address rapidly switching between different MAC addresses is a different shape of ARP anomaly than one MAC claiming many IPs -- it looks like two devices fighting over the same identity, or one device impersonating another's address on and off.",
+      "how_it_decides": "Fires when a single IP address transitions between at least min_transitions (default 3) distinct MAC addresses within max_span_seconds (default 60 seconds). Also carries a 600-second cooldown once fired.",
+      "what_would_make_it_wrong": "Fast-roaming Wi-Fi mobility features (a client handing off between access points under one SSID), NIC teaming or failover configurations, and some load balancers can all produce a legitimately-changing MAC-to-IP mapping in a short window.",
+      "glossary_terms": [
+        "arp",
+        "mac_address",
+        "mitm"
+      ],
+      "worked_example": {
+        "scenario": "192.168.1.77 resolves to MAC AA:11, then BB:22, then AA:11 again, then CC:33, all within 25 seconds.",
+        "walkthrough": [
+          "4 transitions across that window -- above min_transitions (3).",
+          "25 seconds is under max_span_seconds (60).",
+          "The detector fires for 192.168.1.77."
+        ]
+      },
+      "learn_more": "MITRE ATT&CK TA0006/T1557"
+    },
+    {
+      "kind": "detector",
+      "id": "rogue_dhcp",
+      "title": "What 'rogue DHCP' detection means",
+      "plain": "A DHCP server that isn't the one you expect can hand out its own gateway and DNS settings to any device that asks -- putting itself in the middle of that device's traffic without the device ever noticing anything wrong.",
+      "how_it_decides": "If known_server_ip isn't explicitly configured, the detector infers which server is 'known' as whichever one holds a clear majority (min_dominance_ratio, default 0.6) of DHCP offers observed in the window, once at least min_offers (default 3) offers have been seen -- only then does it flag the minority server(s) as rogue.",
+      "what_would_make_it_wrong": "A second legitimate DHCP server is common and entirely non-malicious: a new router accidentally left in router mode instead of bridge mode, a misconfigured access point, or a phone's mobile-hotspot internet connection sharing all present as a second DHCP server. On this tool specifically, this detector cannot currently fire at all: ARP visibility here comes from polling the OS ARP cache for IP-to-MAC changes, which carries no DHCP traffic whatsoever. It is implemented and tested against synthetic DHCP offer data, but there is no live DHCP feed for it to observe on this capture layer.",
+      "glossary_terms": [
+        "dhcp",
+        "gateway",
+        "mitm"
+      ],
+      "learn_more": "MITRE ATT&CK TA0006/T1557.003"
+    },
+    {
+      "kind": "detector",
+      "id": "lateral_smb_rdp",
+      "title": "What 'lateral movement over SMB/RDP' means",
+      "plain": "After breaching one machine, an attacker's next move is usually to reach further into the network -- and SMB, RDP, and WinRM are the normal, trusted administrative protocols they ride on to do it, which is what makes this hard to tell apart from routine IT work using the same tools.",
+      "how_it_decides": "Fires when one host connects to at least min_hosts (default 3) distinct internal hosts over SMB/RDP/WinRM within max_span_seconds (default 1,800 seconds, i.e. 30 minutes).",
+      "what_would_make_it_wrong": "Deployment/configuration-management software, remote monitoring agents, backup agents, and a domain controller doing routine Group Policy work all legitimately touch many internal hosts over exactly these same ports as part of their normal job.",
+      "glossary_terms": [
+        "smb",
+        "rdp",
+        "lateral_movement"
+      ],
+      "worked_example": {
+        "scenario": "A host connects to 4 other internal machines over SMB (445) and RDP (3389) within 12 minutes.",
+        "walkthrough": [
+          "4 distinct internal hosts touched -- meets min_hosts (3).",
+          "12 minutes (720s) is under max_span_seconds (1800).",
+          "The detector fires for that source host."
+        ]
+      },
+      "learn_more": "MITRE ATT&CK TA0008/T1021"
+    },
+    {
+      "kind": "detector",
+      "id": "credentials_plaintext",
+      "title": "What 'plaintext credentials' detection means",
+      "plain": "Some protocols send authentication in the clear by design, with no way to turn encryption on -- if traffic to one of them is observed at all, credentials are exposed to anyone on the path, full stop.",
+      "how_it_decides": "FTP, Telnet, IMAP, POP3, and LDAP simple-bind are flagged purely by their well-known port, since the protocol itself is inherently cleartext -- no payload inspection is needed to know that. HTTP Basic authentication is different: it only fires when a payload snippet is actually available and that snippet contains the Authorization header, and skips cleanly (rather than guessing) when no payload was captured. min_events (default 1) means a single observed instance is enough to fire.",
+      "what_would_make_it_wrong": "Legacy internal devices -- printers, NAS boxes, building or industrial control systems -- often only support these older protocols and are used intentionally on a trusted internal segment, where the practical risk is lower than the same traffic on an untrusted network.",
+      "glossary_terms": [
+        "plaintext",
+        "smb",
+        "mitm"
+      ],
+      "worked_example": {
+        "scenario": "A device connects to an internal NAS on port 21 (FTP).",
+        "walkthrough": [
+          "Port 21 is in the port-based cleartext-protocol set -- no payload inspection needed.",
+          "1 event >= min_events (1).",
+          "The detector fires; whether it's actually a risk depends on whether that NAS is meant to be reachable and trusted."
+        ]
+      },
+      "learn_more": "MITRE ATT&CK TA0006/T1040"
+    },
+    {
+      "kind": "detector",
+      "id": "known_bad_peer",
+      "title": "What a 'known bad peer' match means",
+      "plain": "This checks observed traffic against a small, bundled offline list of publicly documented infrastructure facts, and flags a match to any category in it.",
+      "how_it_decides": "No payload inspection or behavioural analysis is involved -- purely a lookup against the bundled indicator set (see intel/data/indicators.json): reserved/bogon ranges, mining-pool ports and domains, and proxy/Tor default ports. There's no single MITRE technique that fits 'matches a local list', so this ships mapped to the Command and Control tactic (TA0011) only, rather than inventing a technique id that doesn't really fit.",
+      "what_would_make_it_wrong": "The bundled set deliberately contains no attributed malware infrastructure and no threat-actor attribution -- a match reflects what category of address this is (a mining pool, a bogon range, a proxy port), not proof of compromise on its own.",
+      "glossary_terms": [
+        "false_positive",
+        "mitre_attack"
+      ],
+      "learn_more": "MITRE ATT&CK TA0011 (tactic only)"
+    },
+    {
+      "kind": "detector",
+      "id": "tor_or_proxy",
+      "title": "What 'Tor or proxy' detection means",
+      "plain": "SOCKS proxies, HTTP proxies, and Tor all have well-known default ports. Traffic to one of them (matched against the bundled port list) is flagged, purely on port, not on confirmed identity of the destination.",
+      "how_it_decides": "Matches outbound traffic against the bundled set's SOCKS (1080), Squid-default HTTP proxy (3128), and Tor's default SOCKS ports (9050, 9150). No tunables -- it is a fixed lookup.",
+      "what_would_make_it_wrong": "Corporate VPN clients, legitimate SOCKS proxies, and privacy tools the user runs intentionally -- including Tor Browser itself -- use exactly these ports. No Tor exit-node or relay IP list is bundled (they rotate on the order of hours, and a stale static copy would be worse than useless), so this can only ever be a port-based heuristic: it will miss genuine Tor traffic that doesn't use these specific ports, and it will flag entirely legitimate use of the same ports for something else.",
+      "glossary_terms": [
+        "tor",
+        "proxy"
+      ],
+      "learn_more": "MITRE ATT&CK TA0011/T1090.003"
+    },
+    {
+      "kind": "detector",
+      "id": "crypto_mining",
+      "title": "What 'crypto mining' detection means",
+      "plain": "Cryptocurrency mining traffic has a recognisable shape once it's actually mining: connections to known Stratum ports or mining-pool domains, often with periodic, uniform-size 'share submission' packets -- similar in shape to C2 beaconing, for an unrelated reason.",
+      "how_it_decides": "Combines a port/domain match against the bundled indicator set with c2_beaconing's own regularity math reused on the candidate peer: periodic, uniform-size contacts (share submissions) boost confidence beyond what the port/domain match alone would give, once at least min_contacts_for_shape (default 6) contacts exist with interval CV at or below max_interval_cv (default 0.4, deliberately looser than c2_beaconing's own 0.15, since mining traffic is regular but not as machine-precise).",
+      "what_would_make_it_wrong": "A user intentionally running their own miner is common and entirely legitimate -- this detects the activity, not malicious intent. The low-numbered mining ports (3333/4444/5555/7777/8888) are also reused by unrelated software, so a port match alone is weaker evidence than a port match plus the beaconing shape.",
+      "glossary_terms": [
+        "c2",
+        "beaconing"
+      ],
+      "worked_example": {
+        "scenario": "A process connects to a peer on port 3333 and sends 7 uniform ~200-byte packets at roughly 15-second intervals.",
+        "walkthrough": [
+          "Port 3333 is in the bundled mining-pool port set.",
+          "7 contacts >= min_contacts_for_shape (6).",
+          "Interval CV for near-uniform 15s gaps is well under max_interval_cv (0.4).",
+          "Port match plus regular shape together raise confidence well above a port match alone."
+        ]
+      },
+      "learn_more": "MITRE ATT&CK TA0040/T1496"
+    },
+    {
+      "kind": "detector",
+      "id": "suspicious_tls",
+      "title": "What 'suspicious TLS' detection means",
+      "plain": "A TLS handshake carries several signals of its own trustworthiness before any data is exchanged: whether the certificate is self-signed or expired, whether the protocol version is dangerously old, whether SNI (the hostname being requested) is missing, and unusual ALPN or JA3 fingerprints.",
+      "how_it_decides": "Accumulates a 0-1 suspicion score across whichever of these signals are actually present in the capture, and fires once that score reaches min_score (default 0.3). A JA3 watchlist (empty by default -- no hashes are bundled) can add specific known-bad fingerprints if supplied. Critically, it skips a packet entirely when it carries no TLS handshake metadata at all, rather than guessing at a score from nothing.",
+      "what_would_make_it_wrong": "Self-signed certificates are routine and expected for internal devices -- routers, printers, home-lab services, IoT admin interfaces -- and for local development, not evidence of compromise on their own. On this tool today, nothing in the capture layer actually parses a TLS ClientHello, so tls_version, JA3, and certificate flags are never populated from live traffic -- this detector correctly skips rather than guessing, which means it does not currently produce findings on real captures, not that TLS on this network is confirmed fine.",
+      "glossary_terms": [
+        "tls",
+        "certificate",
+        "mitm"
+      ],
+      "learn_more": "MITRE ATT&CK TA0005/T1573"
+    },
+    {
+      "kind": "detector",
+      "id": "nonstandard_port_service",
+      "title": "What 'nonstandard port service' detection means",
+      "plain": "Some protocols leave a recognisable text signature in their very first bytes -- an SSH banner, an HTTP response line, an FTP greeting. Seeing one of those signatures on a port that protocol doesn't normally use is worth a second look, since it means something is deliberately (or accidentally) not where expected.",
+      "how_it_decides": "Matches known protocol banner strings (SSH/HTTP/FTP signatures) against the packet's captured summary text, and fires when that signature appears on a port outside that protocol's expected set. No tunables.",
+      "what_would_make_it_wrong": "Plenty of legitimate services deliberately run on alternate ports: dev servers commonly run HTTP on 3000, 8000, or 8080; SSH is sometimes deliberately moved off port 22 specifically to cut down on automated scanner noise. A hit here is a 'this is unusual' signal, not a 'this is wrong' one.",
+      "glossary_terms": [
+        "port"
+      ],
+      "worked_example": {
+        "scenario": "An SSH banner string ('SSH-2.0-OpenSSH_...') is observed on TCP port 2222, not SSH's expected port 22.",
+        "walkthrough": [
+          "The packet summary contains a recognised SSH signature.",
+          "Port 2222 is outside SSH's expected port set.",
+          "The detector fires -- commonly because someone deliberately moved SSH off 22, which is itself a normal hardening step."
+        ]
+      },
+      "learn_more": "MITRE ATT&CK TA0005/T1571"
+    },
+    {
+      "kind": "detector",
+      "id": "new_external_peer",
+      "title": "What 'new external peer' detection means",
+      "plain": "The very first time a process with an otherwise stable, predictable history talks to a brand-new external address is genuinely ambiguous: it could be a user visiting something new and unrelated, or the first visible sign of anything from C2 setup to the start of exfiltration.",
+      "how_it_decides": "Baseline-gated: only evaluates a process once it has min_samples (default 10) historical contacts over lookback_hours (default 720 = 30 days) establishing what its normal peer set looks like, then fires on the first contact to a peer outside that established set. Because the signal is genuinely ambiguous by design, this ships tactic-only (no specific technique id), at low severity and low confidence -- it is meant to be a hint, not an alarm.",
+      "what_would_make_it_wrong": "Browsers, package managers, and anything that talks to a large or changing set of servers (CDNs, load-balanced services) will trip this constantly and are the dominant false-positive case -- it is most useful for install-and-forget background agents that normally only ever talk to a small, fixed set of peers, where a new one is genuinely notable.",
+      "glossary_terms": [
+        "baseline",
+        "c2",
+        "false_positive"
+      ],
+      "learn_more": "MITRE ATT&CK TA0011 (tactic only)"
+    },
+    {
+      "kind": "detector",
+      "id": "protocol_anomaly",
+      "title": "What 'protocol anomaly' detection means",
+      "plain": "TCP's flag bits define what a segment is for -- SYN to open, ACK to acknowledge, FIN to close, and so on. Some combinations are simply impossible in a normal connection (SYN and FIN set together makes no sense: opening and closing at once) and only occur when traffic has been deliberately crafted, usually to probe a firewall or evade detection.",
+      "how_it_decides": "Flags malformed or impossible TCP flag combinations: SYN+FIN together, a Xmas scan (FIN+PSH+URG set with no ACK), and a NULL scan (no flags set at all). Gated on min_events (default 2) so a single stray packet doesn't fire alone.",
+      "what_would_make_it_wrong": "Some old or buggy embedded TCP/IP stacks occasionally produce unusual flag combinations without any scanning intent behind them -- a single stray packet isn't meaningful on its own, which is exactly why this requires a minimum event count rather than firing on one.",
+      "glossary_terms": [
+        "tcp",
+        "port_scan"
+      ],
+      "worked_example": {
+        "scenario": "Two packets to the same peer are observed with SYN and FIN both set.",
+        "walkthrough": [
+          "Both packets match the SYN+FIN impossible-combination pattern.",
+          "2 events >= min_events (2).",
+          "The detector fires."
+        ]
+      },
+      "learn_more": "MITRE ATT&CK TA0005 (tactic only)"
+    },
+    {
+      "kind": "detector",
+      "id": "deprecated_protocol",
+      "title": "What 'deprecated protocol' detection means",
+      "plain": "SMBv1, Telnet, FTP, SSLv3, and NTLMv1 all have publicly known, serious weaknesses and have been formally deprecated for years -- seeing any of them on the wire at all is worth flagging, independent of any other behavioural signal.",
+      "how_it_decides": "Telnet and FTP are flagged purely by port, since the protocol is unambiguous from that alone. SSLv3 needs a tls_version field to check against; SMBv1 and NTLMv1 need a recognisable textual marker in the packet summary -- both skip cleanly when the capture layer doesn't supply that field, rather than guessing. min_events (default 1) means a single observed instance is enough.",
+      "what_would_make_it_wrong": "Legacy devices -- old printers, NAS boxes, industrial or building control systems -- frequently only support these protocols and often cannot be upgraded at all. Network segmentation, isolating the device rather than trying to force it onto a protocol it doesn't speak, is often the more realistic answer than an outright block.",
+      "glossary_terms": [
+        "smb",
+        "tls",
+        "false_positive"
+      ],
+      "worked_example": {
+        "scenario": "A device connects to an internal host on port 23 (Telnet).",
+        "walkthrough": [
+          "Port 23 is Telnet's well-known port -- flagged purely by port, no payload inspection needed.",
+          "1 event >= min_events (1).",
+          "The detector fires."
+        ]
+      },
+      "learn_more": "MITRE ATT&CK TA0006 (tactic only)"
+    },
+    {
+      "kind": "rule",
+      "id": "plaintext_http",
+      "title": "What the 'unencrypted traffic' recommendation means",
+      "plain": "Some traffic to external hosts is still travelling over plain HTTP, FTP, Telnet, IMAP, POP3, or LDAP -- protocols with no encryption at all, or none turned on for this connection. Anyone positioned on the path between this machine and that host -- the local network, an ISP, a coffee-shop router -- can read or modify it.",
+      "how_it_decides": "Groups flows by (remote address, remote port) for the plaintext ports {80: http, 21: ftp, 23: telnet, 143: imap, 110: pop3, 389: ldap}, sums bytes per group, and fires once any group reaches MIN_BYTES (5,000 bytes) moved. Severity is medium, confidence 0.9 -- byte thresholds on unencrypted well-known ports are about as reliable a signal as this catalogue has.",
+      "what_would_make_it_wrong": "This only flags what it can see moving -- a site offering both HTTP and HTTPS where the browser happens to prefer HTTPS produces no plaintext traffic to flag at all. It cannot tell whether the specific content sent in the clear was sensitive; a static asset server on plain HTTP is technically the same finding as a login form on plain HTTP.",
+      "glossary_terms": [
+        "plaintext",
+        "https",
+        "encryption",
+        "mitm"
+      ],
+      "worked_example": {
+        "scenario": "18,400 bytes move to 203.0.113.9:80 across several requests in the observed window.",
+        "walkthrough": [
+          "18,400 >= MIN_BYTES (5,000) for that (peer, port) group.",
+          "The finding fires at severity medium, confidence 0.9, naming the peer, byte total, and owning process."
+        ]
+      }
+    },
+    {
+      "kind": "rule",
+      "id": "plaintext_dns",
+      "title": "What the 'plain DNS' recommendation means",
+      "plain": "Every DNS lookup made over plain UDP/TCP port 53 is visible in full, and spoofable, by anyone on the path -- including the local network operator. DNS-over-HTTPS (DoH) or DNS-over-TLS (DoT) encrypts the lookup itself so it can't be read or tampered with in transit.",
+      "how_it_decides": "Sums bytes across all external flows to port 53 and fires once that total reaches MIN_BYTES (2,000 bytes), but only if no DoT traffic (port 853) was also observed in the same window -- if DoT is present, this rule assumes at least some name resolution is already encrypted and stays quiet. Severity low, confidence 0.7.",
+      "what_would_make_it_wrong": "This only detects DoT by port (853); a resolver using DoH (which looks like ordinary HTTPS traffic on port 443) is indistinguishable from any other HTTPS flow to this rule, so a machine that's actually fully on DoH can still trigger this if it also makes any plain port-53 queries as a fallback.",
+      "glossary_terms": [
+        "dns",
+        "plaintext",
+        "encryption"
+      ],
+      "worked_example": {
+        "scenario": "612 bytes of plain DNS traffic to three different external resolvers, no port 853 traffic anywhere in the window.",
+        "walkthrough": [
+          "612 >= MIN_BYTES (2,000)? No -- 612 is below the threshold, so this specific case would not fire.",
+          "If the total had instead been 2,400 bytes with the same no-DoT condition, it would fire at low severity, confidence 0.7."
+        ]
+      }
+    },
+    {
+      "kind": "rule",
+      "id": "listening_exposed",
+      "title": "What the 'exposed listener' recommendation means",
+      "plain": "A service bound to 0.0.0.0 (every interface) rather than 127.0.0.1 (this machine only) accepts connections from any network this machine is on -- including untrusted public Wi-Fi, not just the trusted LAN.",
+      "how_it_decides": "Enumerates listening sockets via psutil and keeps the first one seen per port bound to 0.0.0.0/::. Ports 445 (SMB) and 3389 (RDP) are severity high; other notable ports (5985/5986 WinRM, 22 SSH) are medium; anything else is info. Confidence is 0.85 for a notable port, 0.5 otherwise -- an unrecognised port is a much weaker signal of anything specific.",
+      "what_would_make_it_wrong": "This can't see a firewall rule that already restricts the port to the LAN even though the socket itself is bound broadly -- the bind address and the effective reachability are two different things, and this rule only measures the former. It also can't distinguish a service you deliberately exposed for a reason from one you forgot was running.",
+      "glossary_terms": [
+        "port",
+        "firewall",
+        "loopback"
+      ],
+      "worked_example": {
+        "scenario": "SMB (port 445) is bound to 0.0.0.0, owned by System.",
+        "walkthrough": [
+          "Port 445 is in the NOTABLE set as 'SMB'.",
+          "445 is one of the two ports (445, 3389) that get severity high.",
+          "Confidence 0.85 since it's a notable, recognised port."
+        ]
+      }
+    },
+    {
+      "kind": "rule",
+      "id": "unusual_port",
+      "title": "What the 'sustained traffic to an uncommon port' recommendation means",
+      "plain": "A process moving a meaningful amount of data, over many packets, to a port above 1024 that isn't a recognised well-known service, is worth a second look -- it could be a game, a VPN, a custom API, or something worth investigating.",
+      "how_it_decides": "Fires per flow when the remote port is external, above 1024, not resolvable to a known service name, and the flow has moved at least MIN_BYTES (200,000) across at least MIN_PACKETS (20). Severity low, confidence 0.55 -- deliberately modest, since 'not a well-known port' is common and mostly benign.",
+      "what_would_make_it_wrong": "The overwhelming majority of hits on this rule are ordinary: games, VPN clients, custom internal APIs, and peer-to-peer software all use high, unregistered ports constantly and legitimately. This is one of the lowest-confidence, highest-false-positive-rate rules in the catalogue by design -- it's a prompt to check the process, not a claim that anything is wrong.",
+      "glossary_terms": [
+        "port",
+        "false_positive"
+      ],
+      "worked_example": {
+        "scenario": "A game client sends 350,000 bytes over 40 packets to remote_addr:41235.",
+        "walkthrough": [
+          "Port 41235 > 1024 and has no recognised service name.",
+          "350,000 >= MIN_BYTES (200,000) and 40 >= MIN_PACKETS (20).",
+          "Fires at low severity, confidence 0.55 -- very plausibly just the game."
+        ]
+      }
+    },
+    {
+      "kind": "rule",
+      "id": "beaconing",
+      "title": "What the hygiene 'regular check-in pattern' recommendation means",
+      "plain": "This is the lighter-weight, always-on cousin of the c2_beaconing threat detector: a simpler per-process regularity check built into the general hygiene rules rather than the threat engine, so it can flag a pattern worth a look even where the full detector pipeline isn't the frame you're looking through.",
+      "how_it_decides": "Groups packets by (remote address, pid), and for peers with at least MIN_SAMPLES (8) packets, computes the coefficient of variation of inter-arrival gaps. Fires when CV <= MAX_CV (0.15) and the average packet length is at or under MAX_AVG_PAYLOAD (2,000 bytes). Confidence scales with regularity: min(0.9, 0.5 + (1 - cv)), so a near-perfect CV of 0.01 lands close to the 0.9 ceiling.",
+      "what_would_make_it_wrong": "The same false positives as c2_beaconing apply here: sync clients, chat apps, and monitoring agents all produce genuinely regular, small-payload traffic as part of normal operation. This rule has no baseline and no separate payload-size-variation check the way c2_beaconing does, so it is a coarser signal.",
+      "glossary_terms": [
+        "beaconing",
+        "c2",
+        "false_positive"
+      ],
+      "worked_example": {
+        "scenario": "A process contacts one peer 10 times with gaps of 30, 31, 29, 30, 31, 30, 29, 31, 30 seconds, average packet length 180 bytes.",
+        "walkthrough": [
+          "10 samples >= MIN_SAMPLES (8).",
+          "Mean gap ~=30.1s, stdev ~=0.7s, CV ~=0.023 -- well under MAX_CV (0.15).",
+          "Average length 180 <= MAX_AVG_PAYLOAD (2,000).",
+          "Confidence = min(0.9, 0.5 + (1 - 0.023)) = min(0.9, 1.477) = 0.9 (capped)."
+        ]
+      }
+    },
+    {
+      "kind": "rule",
+      "id": "heavy_talker",
+      "title": "What the 'dominant traffic share' recommendation means",
+      "plain": "When one process or one peer accounts for a large share of all traffic in a window, that's worth surfacing as context even when nothing else about it looks wrong -- it's the kind of thing you want to recognise on sight ('oh, that's just the backup running'), not investigate from scratch.",
+      "how_it_decides": "Only evaluates windows where total traffic reaches MIN_WINDOW_BYTES (1,000,000) at all, then separately checks, per process and per peer, whether that single process/peer's share of the window's total bytes reaches SHARE_THRESHOLD (0.4, i.e. 40%). Always fires at severity info, confidence 0.75 -- this is explicitly framed as context, not a warning.",
+      "what_would_make_it_wrong": "Large dominant transfers are extremely often exactly what they look like: a CDN, a backup target, a cloud drive sync, or a big deliberate download. This rule has no opinion on whether the volume is appropriate, only that it is large relative to everything else in the window.",
+      "glossary_terms": [
+        "bandwidth",
+        "flow"
+      ],
+      "worked_example": {
+        "scenario": "Total window traffic is 5,000,000 bytes; one process accounts for 2,200,000 of it.",
+        "walkthrough": [
+          "5,000,000 >= MIN_WINDOW_BYTES (1,000,000), so the window qualifies.",
+          "Share = 2,200,000 / 5,000,000 = 0.44 (44%) -- above SHARE_THRESHOLD (0.4).",
+          "Fires at info severity, confidence 0.75, naming that process."
+        ]
+      }
+    },
+    {
+      "kind": "rule",
+      "id": "many_peers",
+      "title": "What the 'unusually large number of hosts' recommendation means",
+      "plain": "Most ordinary software talks to a small, fairly stable set of external hosts. A single process talking to a large number of distinct external addresses is normal for some categories of software and unusual for most others.",
+      "how_it_decides": "Per (pid, external-flow) grouping, counts distinct remote addresses; fires once a process's distinct-peer count reaches MIN_PEERS (25). Severity low, confidence 0.6.",
+      "what_would_make_it_wrong": "Browsers (every tab, every embedded ad/tracker/CDN resource), torrent or other P2P clients, and CDN-backed apps all legitimately and routinely exceed this threshold as part of completely normal use -- this rule has no way to distinguish 'browser with 30 tabs open' from anything else with the same peer count.",
+      "glossary_terms": [
+        "false_positive"
+      ],
+      "worked_example": {
+        "scenario": "A background process contacts 28 distinct external IP addresses within the window.",
+        "walkthrough": [
+          "28 >= MIN_PEERS (25).",
+          "Fires at low severity, confidence 0.6 -- worth checking whether that process is expected to fan out this widely."
+        ]
+      }
+    },
+    {
+      "kind": "rule",
+      "id": "insecure_lan_service",
+      "title": "What the 'insecure LAN service' recommendation means",
+      "plain": "A device discovered on the LAN with FTP, Telnet, or SMB open sends credentials and data unencrypted to anyone who connects -- and anyone else on the same network can potentially intercept traffic to it, not just this machine.",
+      "how_it_decides": "For each discovered device's recorded open_ports, checks against RISKY_PORTS ({21: FTP, 23: Telnet, 445: SMB}); fires per device with any match. Severity medium, confidence 0.7.",
+      "what_would_make_it_wrong": "Legacy printers, NAS boxes, and building/industrial control systems intentionally and unavoidably run these protocols in plenty of real setups, particularly on a segment already treated as internal-trusted -- the practical fix is often network segmentation rather than disabling the service outright.",
+      "glossary_terms": [
+        "smb",
+        "plaintext"
+      ],
+      "worked_example": {
+        "scenario": "A discovered NAS device at 192.168.1.40 has ports 21 and 445 open.",
+        "walkthrough": [
+          "Both 21 (FTP) and 445 (SMB) are in RISKY_PORTS.",
+          "Fires once for that device at medium severity, confidence 0.7, naming both services."
+        ]
+      }
+    },
+    {
+      "kind": "rule",
+      "id": "stale_capture_tier",
+      "title": "What the 'reduced-visibility capture mode' recommendation means",
+      "plain": "Everything else this tool reports is only as good as what the active capture tier can actually see -- this rule exists purely to keep that limitation visible, every time it applies, rather than letting a degraded capture mode quietly go unnoticed.",
+      "how_it_decides": "Fires whenever the current capture_mode is 'polling' or 'rawsocket' (i.e. not the full 'npcap' tier). Always severity info, confidence 1.0 -- this is a statement of fact about the running configuration, not a probabilistic finding.",
+      "what_would_make_it_wrong": "There isn't really a false-positive case here: if the capture tier is genuinely polling or rawsocket, the reduced visibility is genuinely real, most notably that c2_beaconing is switched off entirely on the polling tier because a fixed-interval sample makes every long-lived connection look artificially regular.",
+      "glossary_terms": [
+        "pcap",
+        "promiscuous_mode"
+      ]
+    },
+    {
+      "kind": "rule",
+      "id": "broadcast_noise",
+      "title": "What the 'excessive broadcast/multicast chatter' recommendation means",
+      "plain": "A high volume of NBNS, LLMNR, mDNS, or general broadcast/multicast traffic in a window usually points to a misconfigured device, a chatty IoT gadget, or legacy name-resolution protocols that could be turned off.",
+      "how_it_decides": "Counts packets by destination: NBNS (ports 137/138), mDNS (5353), LLMNR (5355), plus any packet addressed to a broadcast or multicast destination address more generally. Fires once the total across all these categories reaches MIN_COUNT (300) packets in the window. Severity low, confidence 0.6.",
+      "what_would_make_it_wrong": "Networks with several IoT, smart-home, or casting devices (Chromecast, AirPlay, printers advertising via mDNS) can legitimately generate this volume of chatter as part of normal service discovery -- the rule flags the volume, not any specific device or protocol as the definite cause.",
+      "glossary_terms": [
+        "broadcast",
+        "multicast",
+        "llmnr",
+        "netbios"
+      ],
+      "worked_example": {
+        "scenario": "312 packets in the window: 180 to port 5355 (LLMNR), 90 to port 5353 (mDNS), 42 to broadcast addresses.",
+        "walkthrough": [
+          "Total = 180 + 90 + 42 = 312, which is >= MIN_COUNT (300).",
+          "Fires at low severity, confidence 0.6, with the per-category breakdown as evidence."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "firewall_profiles_enabled",
+      "title": "What 'firewall enabled on all profiles' checks",
+      "plain": "Windows Firewall has three independent on/off switches -- Domain, Private, and Public profiles, one for each kind of network you might be connected to. This check confirms all three are actually on.",
+      "how_it_decides": "Reads Get-NetFirewallProfile for all three profiles. Any profile with Enabled = false is a fail, listing which one(s); all three enabled is a pass. There is no warn state -- this is a binary control.",
+      "what_would_make_it_wrong": "A disabled Windows Firewall profile sometimes means a third-party firewall product has taken over filtering instead, in which case the underlying protection may still be present even though this specific check reads it as off -- worth confirming what's actually running before treating this as unprotected.",
+      "glossary_terms": [
+        "firewall"
+      ],
+      "worked_example": {
+        "scenario": "Get-NetFirewallProfile returns Domain: Enabled=True, Private: Enabled=True, Public: Enabled=False.",
+        "walkthrough": [
+          "Public is in the disabled list -- the check fails, naming 'Public' as the disabled profile.",
+          "Had all three read Enabled=True, it would pass instead."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "firewall_inbound_default_block",
+      "title": "What 'default inbound action is Block' checks",
+      "plain": "Every firewall has a default action for traffic that doesn't match any specific rule. This check confirms that default is Block, not Allow, on every profile.",
+      "how_it_decides": "Reads DefaultInboundAction from Get-NetFirewallProfile for each profile; any profile not set to 'Block' is listed as failing. All profiles at Block is a pass.",
+      "what_would_make_it_wrong": "There is essentially no legitimate reason for DefaultInboundAction to be Allow on a personal workstation -- this is one of the more clear-cut fails in the catalogue, not a heuristic with a soft edge.",
+      "glossary_terms": [
+        "firewall"
+      ],
+      "worked_example": {
+        "scenario": "Domain: DefaultInboundAction=Block, Private: Block, Public: Allow.",
+        "walkthrough": [
+          "Two of three profiles (Domain, Private) already read 'Block'.",
+          "Public reads 'Allow', which doesn't match 'Block' -- the check fails, naming Public as the non-blocking profile."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "firewall_allow_rules_broad",
+      "title": "What 'no overly broad inbound allow rules' checks",
+      "plain": "An enabled inbound rule with RemoteAddress=Any and LocalPort=Any is a hole punched straight through the firewall for every port from every host that can reach this machine -- often left behind by an installer that requested broader access than it needed.",
+      "how_it_decides": "Bulk-fetches every enabled inbound Allow rule and its port/address filters, and flags any rule where both the remote address and the local port are unrestricted ('Any', or simply absent, which is treated the same way). If any such rule applies to the Public profile, the check fails; if broad rules exist only on Private/Domain, it's a softer warn instead of a fail.",
+      "what_would_make_it_wrong": "A legitimate app occasionally does need broad access on a network you've already decided to trust -- this check surfaces every such rule for review rather than assuming any one of them is wrong; the fail-vs-warn split by profile already builds in that a broad rule scoped only to a Private network is a smaller problem than the same rule reachable on Public.",
+      "glossary_terms": [
+        "firewall",
+        "port"
+      ],
+      "worked_example": {
+        "scenario": "2 enabled inbound Allow rules found with RemoteAddress=Any, LocalPort=Any -- one on the Private profile, one that also applies to Public.",
+        "walkthrough": [
+          "Both rules are 'broad' by the RemoteAddress=Any + LocalPort=Any test.",
+          "Because at least one applies to Public, the check fails rather than warns."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "firewall_logging_enabled",
+      "title": "What 'blocked-packet logging is enabled' checks",
+      "plain": "Without logging, the firewall silently drops scan and probe attempts and leaves no record at all -- there is no way to notice reconnaissance, or a failed intrusion attempt, after the fact.",
+      "how_it_decides": "Reads LogBlocked from Get-NetFirewallProfile per profile. Off on every profile is a fail; off on some but not all is a warn; on everywhere is a pass.",
+      "what_would_make_it_wrong": "Logging has a small, genuinely negligible cost (disk I/O, log file growth capped at a configured size), so there's little legitimate reason to leave it off -- the fail-vs-warn split mainly reflects how partial the gap is, not a case where 'off' might secretly be fine.",
+      "glossary_terms": [
+        "firewall"
+      ],
+      "worked_example": {
+        "scenario": "Domain: LogBlocked=True, Private: LogBlocked=False, Public: LogBlocked=True.",
+        "walkthrough": [
+          "1 of 3 profiles (Private) has logging off -- not all three, so this is a warn rather than a fail."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "smb1_disabled",
+      "title": "What 'SMBv1 is disabled' checks",
+      "plain": "SMBv1 is the original, decades-old version of Windows file sharing, with no protection against relay attacks and no modern security design at all -- it was the specific protocol exploited by WannaCry and NotPetya via the EternalBlue vulnerability.",
+      "how_it_decides": "Reads EnableSMB1Protocol from Get-SmbServerConfiguration. True is a fail; False (or absent/falsy) is a pass. No warn state.",
+      "what_would_make_it_wrong": "The only legitimate reason SMBv1 would need to stay on is genuinely old hardware -- a NAS or network printer from well over a decade ago that has no firmware update path to a newer SMB version. That's now a narrow case, not a common one.",
+      "glossary_terms": [
+        "smb",
+        "lateral_movement"
+      ],
+      "worked_example": {
+        "scenario": "Get-SmbServerConfiguration reports EnableSMB1Protocol = True.",
+        "walkthrough": [
+          "The value is truthy -- the check fails: 'SMBv1 server protocol is enabled'."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "smb_signing_required",
+      "title": "What 'SMB signing is required' checks",
+      "plain": "Without required signing, an attacker positioned on the same network can relay or tamper with an SMB session -- SMB signing cryptographically proves each message came from the party who negotiated the session and wasn't altered in transit.",
+      "how_it_decides": "Reads RequireSecuritySignature from both Get-SmbClientConfiguration and Get-SmbServerConfiguration. Both true is a pass; anything else (either false) is a fail, reporting both values individually as evidence.",
+      "what_would_make_it_wrong": "Requiring signing can reduce SMB throughput slightly and will break connectivity to any device that only speaks old, unsigned SMBv1 -- a real, if usually small, operational cost, not a reason the check result itself is wrong.",
+      "glossary_terms": [
+        "smb",
+        "mitm"
+      ],
+      "worked_example": {
+        "scenario": "Get-SmbClientConfiguration reports RequireSecuritySignature=True; Get-SmbServerConfiguration reports RequireSecuritySignature=False.",
+        "walkthrough": [
+          "Client is true, server is false -- not both true, so the check fails, reporting both values."
+        ]
+      },
+      "learn_more": "CIS Microsoft Windows 11 v3.0.0 2.3.9.2"
+    },
+    {
+      "kind": "check",
+      "id": "smb_guest_auth_disabled",
+      "title": "What 'insecure SMB guest authentication is disabled' checks",
+      "plain": "Allowing insecure guest fallback lets the SMB client silently downgrade to an unauthenticated, unsigned session against a rogue or misconfigured server -- exactly the scenario the AllowInsecureGuestAuth hardening (CVE-2019-1166) was built to close.",
+      "how_it_decides": "Reads the AllowInsecureGuestAuth registry value under LanmanWorkstation\\Parameters. A truthy value is a fail. If the value is absent entirely (not explicitly configured), the check passes -- current Windows 10 1709+/11 defaults to disabled, so an absent value is read as the safe default, not an unknown.",
+      "what_would_make_it_wrong": "Genuinely old NAS boxes or routers that only offer unauthenticated guest SMB access will stop connecting once this is disabled -- a real compatibility cost on old hardware, though not a reason the setting itself is insecure.",
+      "glossary_terms": [
+        "smb",
+        "mitm"
+      ],
+      "worked_example": {
+        "scenario": "The registry value is absent (never explicitly set).",
+        "walkthrough": [
+          "No explicit value means Windows' own current default applies, which is disabled -- the check passes, noting the value is 'not configured' rather than reading an unknown as a failure."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "smb_shares_exposed",
+      "title": "What 'no SMB shares grant Everyone/Guest broad access' checks",
+      "plain": "A share that grants the Everyone or Guest account read or write access is reachable by any device on the network with no credentials at all -- including malware running on another machine on the same LAN looking for somewhere to plant or steal files.",
+      "how_it_decides": "Enumerates every SMB share's access control entries (Get-SmbShare + Get-SmbShareAccess) and flags any entry granting Everyone/Guest/Builtin\\Guests anything other than 'No Access'. Any such entry across any share is a fail, listing the specific share and account.",
+      "what_would_make_it_wrong": "This can require administrator privileges to enumerate shares completely on some configurations -- an unelevated run may report fewer shares than actually exist, which understates rather than overstates the risk.",
+      "glossary_terms": [
+        "smb"
+      ],
+      "worked_example": {
+        "scenario": "A share named 'Public' grants AccountName='Everyone', AccessRight='Read'.",
+        "walkthrough": [
+          "'everyone' with AccessRight != 'no access' matches the flagged pattern.",
+          "The check fails, naming 'Public -> Everyone (Read)' as the offending ACE."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "rdp_disabled_or_nla",
+      "title": "What 'RDP is disabled, or requires NLA' checks",
+      "plain": "RDP without Network Level Authentication completes the graphical logon screen before the connecting party has proven any credentials at all, exposing the full pre-authentication logon stack to anyone who can reach the port. RDP being reachable at all is itself a routinely internet-scanned-for target.",
+      "how_it_decides": "Reads fDenyTSConnections first: if RDP is denied entirely, that's a pass outright. If RDP is allowed, it then checks the NLA (UserAuthentication) registry value: NLA required is a warn (RDP is reachable but harder to reach pre-auth); no NLA is a fail; and if the NLA value can't be read at all, that's also a warn rather than an assumed fail.",
+      "what_would_make_it_wrong": "A machine that genuinely needs RDP for remote administration isn't wrong to have it on -- the check already treats 'RDP on with NLA' as a warn, not a fail, recognising that reduced (not zero) exposure is a legitimate deliberate choice, not just a partial failure.",
+      "glossary_terms": [
+        "rdp",
+        "lateral_movement"
+      ],
+      "worked_example": {
+        "scenario": "fDenyTSConnections=0 (RDP allowed), UserAuthentication=1 (NLA required).",
+        "walkthrough": [
+          "RDP is not denied, so the check proceeds to the NLA value.",
+          "NLA is required -- this is a warn ('reachable, exposure reduced'), not a fail."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "winrm_exposure",
+      "title": "What 'WinRM is not exposed unencrypted or unnecessarily' checks",
+      "plain": "WinRM gives remote command execution on this machine. Running it with AllowUnencrypted on, or reachable from more than a trusted interface, widens the path an attacker on the network needs to get a working shell.",
+      "how_it_decides": "If the WinRM service isn't Running at all, that's a pass outright -- nothing to expose. If it is running, the check reads AllowUnencrypted: true is a fail; false is a warn (encrypted, but the check can't itself confirm it's firewalled to trusted sources only, so it asks you to).",
+      "what_would_make_it_wrong": "WinRM running, encrypted, and firewalled appropriately is a legitimate remote-management setup -- the warn state here is deliberately not a fail, because 'running' isn't itself wrong, only worth confirming is intentional.",
+      "glossary_terms": [
+        "rdp"
+      ],
+      "worked_example": {
+        "scenario": "WinRM service Status=Running, AllowUnencrypted reads False.",
+        "walkthrough": [
+          "Service is running, so the check proceeds to AllowUnencrypted.",
+          "AllowUnencrypted is False -- a warn: 'running (encrypted); confirm this is intentional and firewalled'."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "remote_registry_disabled",
+      "title": "What 'Remote Registry service is disabled' checks",
+      "plain": "The Remote Registry service lets an authenticated remote user read and modify this machine's registry over the network. It has almost no legitimate use on a personal workstation and is a common post-exploitation persistence and reconnaissance target.",
+      "how_it_decides": "Reads the RemoteRegistry service's Status and StartType. Running, or any StartType other than Disabled, is flagged -- fail if the service is actually Running, warn if it's merely not Disabled (e.g. Manual start type) but not currently running.",
+      "what_would_make_it_wrong": "Some remote-management tooling genuinely relies on Remote Registry -- rare on a home/personal machine, more plausible in a managed IT environment, where disabling it could break an intended workflow.",
+      "glossary_terms": [
+        "rdp"
+      ],
+      "worked_example": {
+        "scenario": "Status=Stopped, StartType=Manual.",
+        "walkthrough": [
+          "Not Running, so this doesn't reach fail -- but StartType isn't 'Disabled' either, so it's a warn."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "psremoting_scope",
+      "title": "What 'PowerShell remoting trusted hosts are scoped' checks",
+      "plain": "A wildcard TrustedHosts entry ('*') tells this machine's WinRM client to accept any remote host identity without verifying it against Kerberos or a certificate at all -- opening the door to man-in-the-middle credential theft the moment PowerShell remoting is used from this machine to anywhere.",
+      "how_it_decides": "Reads the WSMan Client TrustedHosts value. Exactly '*' is a fail; any other non-empty value is a warn (scoped, but worth reviewing what's actually listed); empty is a pass.",
+      "what_would_make_it_wrong": "TrustedHosts is only relevant if this machine ever initiates outbound PowerShell remoting at all -- on a machine that never does, an empty value (the pass state) is trivially achieved and this check is mostly moot either way.",
+      "glossary_terms": [
+        "mitm"
+      ],
+      "worked_example": {
+        "scenario": "TrustedHosts reads '*'.",
+        "walkthrough": [
+          "Exact match on the wildcard -- the check fails: 'any remote host is trusted'."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "llmnr_disabled",
+      "title": "What 'LLMNR is disabled' checks",
+      "plain": "LLMNR broadcasts a name lookup to the whole local segment whenever DNS fails to resolve a name, and any peer can answer -- the basis of Responder-style LLMNR poisoning attacks that capture NTLM credential hashes from the querying device.",
+      "how_it_decides": "Reads the EnableMulticast policy registry value. Explicitly 0 is a pass; any other explicit value is a fail. If the policy isn't configured at all, that's a warn, not a pass -- Windows' own unconfigured default is LLMNR *enabled*, so an absent value means the risk is present even though nothing was explicitly set.",
+      "what_would_make_it_wrong": "Small flat networks without a working internal DNS server sometimes genuinely rely on LLMNR for basic device/printer discovery -- disabling it can mean that stops working, which is a real cost to weigh, not a reason the risk itself is overstated.",
+      "glossary_terms": [
+        "llmnr",
+        "mitm",
+        "netbios"
+      ],
+      "worked_example": {
+        "scenario": "EnableMulticast policy value is not configured at all.",
+        "walkthrough": [
+          "No explicit value, and Windows' default is enabled -- the check warns: 'LLMNR is enabled by Windows default', rather than assuming the absence of configuration is safe."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "netbios_disabled",
+      "title": "What 'NetBIOS over TCP/IP is disabled' checks",
+      "plain": "Like LLMNR, NetBIOS name service answers broadcast lookups on the local segment with no authentication, and is commonly abused alongside LLMNR poisoning in the same credential-harvesting attacks.",
+      "how_it_decides": "Reads TcpipNetbiosOptions per IP-enabled adapter (0 = DHCP-controlled/usually enabled, 1 = enabled, 2 = disabled). Any adapter not explicitly set to 2 is counted as not-disabled; if any adapter fails that test, the whole check fails, naming how many of how many adapters. No adapters at all is 'skipped', not pass or fail.",
+      "what_would_make_it_wrong": "Very old devices or shares that only support NetBIOS-name-based discovery (rather than DNS) will stop being reachable by name once this is disabled on the relevant adapter -- a real, if increasingly rare, compatibility cost.",
+      "glossary_terms": [
+        "netbios",
+        "llmnr",
+        "broadcast"
+      ],
+      "worked_example": {
+        "scenario": "2 adapters: one with TcpipNetbiosOptions=2, one with TcpipNetbiosOptions=0 (DHCP-controlled default).",
+        "walkthrough": [
+          "1 of 2 adapters is not explicitly 2 -- the check fails: 'not explicitly disabled on 1 of 2 adapter(s)'."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "mdns_exposure",
+      "title": "What 'mDNS responder is not unnecessarily exposed' checks",
+      "plain": "The Windows mDNS responder answers multicast service-discovery queries on UDP/5353 from anyone on the local segment, which can leak this machine's hostname and, on some networks, let a peer enumerate what services it advertises.",
+      "how_it_decides": "Reads the EnableMDNS registry value. Explicitly 0 is a pass; any other explicit value is a warn (not a fail -- this is one of the twelve checks that never reaches fail, since it's informational/heuristic rather than a binary control). Not configured at all is also a warn, since Windows' own default is enabled.",
+      "what_would_make_it_wrong": "Disabling mDNS breaks discovery of mDNS-advertised devices and services on the local network -- AirPlay, Chromecast, some printers, smart-home devices -- which is a real, common trade-off, not a reason a warn here is wrong.",
+      "glossary_terms": [
+        "multicast",
+        "netbios"
+      ],
+      "worked_example": {
+        "scenario": "EnableMDNS reads 1 (explicitly enabled).",
+        "walkthrough": [
+          "Value is not 0 -- the check warns: 'mDNS responder active on UDP/5353'."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "wpad_disabled",
+      "title": "What 'WPAD proxy auto-detection is disabled' checks",
+      "plain": "WPAD auto-detection asks the network 'who is my proxy?' via DHCP/DNS/NetBIOS broadcast. An attacker who answers first can hand this machine a malicious proxy and transparently intercept and modify unencrypted web traffic from then on.",
+      "how_it_decides": "Reads the binary DefaultConnectionSettings registry value and inspects byte 8, a bitmask where 0x08 means 'Automatically detect settings' (WPAD) is on. That bit set is a fail; clear is a pass. If the value can't be read or the binary blob can't be parsed as expected, that's an error, not a guessed pass or fail.",
+      "what_would_make_it_wrong": "Some corporate networks genuinely rely on WPAD to hand out a legitimate proxy configuration automatically -- disabling this can mean web access needs a manually configured proxy afterward on that specific network.",
+      "glossary_terms": [
+        "wpad",
+        "proxy",
+        "mitm"
+      ],
+      "worked_example": {
+        "scenario": "DefaultConnectionSettings byte 8 = 0x0C (binary ...1100), so bit 0x08 is set.",
+        "walkthrough": [
+          "0x0C & 0x08 = 0x08, truthy -- the check fails: 'Automatically detect settings (WPAD) is enabled'."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "dns_over_https",
+      "title": "What 'DNS over HTTPS is configured' checks",
+      "plain": "Plain DNS queries are visible and modifiable by anyone on the path between this machine and its resolver -- including the local network operator. DoH encrypts those lookups inside HTTPS so they can't be read or tampered with in transit.",
+      "how_it_decides": "Reads Get-DnsClientDohServerAddress (Windows 11 21H2+) and checks whether any configured server has a DohTemplate set. At least one is a pass; none is a warn -- not a fail, since not every environment can or must use DoH, but lookups going out in the clear is worth surfacing.",
+      "what_would_make_it_wrong": "This cmdlet requires a recent-enough Windows 11 build to exist at all -- on an unsupported version, the check errors rather than reporting a false 'no DoH configured', which would otherwise look identical to a genuine absence of DoH on a capable system.",
+      "glossary_terms": [
+        "dns",
+        "encryption",
+        "https"
+      ],
+      "worked_example": {
+        "scenario": "Get-DnsClientDohServerAddress returns one entry for 1.1.1.1 with DohTemplate set to Cloudflare's endpoint.",
+        "walkthrough": [
+          "1 server has a DohTemplate configured -- the check passes: '1 DNS server(s) have a DoH template configured'."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "dns_servers_trusted",
+      "title": "What 'configured DNS servers are on the local network or a recognized provider' checks",
+      "plain": "The DNS resolver sees, and can lie about, every domain name this machine looks up. A DNS server that is neither on the local network nor a well-known public resolver could have been pushed by a compromised router, a rogue DHCP server, or malware.",
+      "how_it_decides": "Checks every configured DNS server address against two allowances: private/link-local address ranges (RFC1918, 169.254.x.x, loopback, and IPv6 equivalents), or a small bundled allowlist of well-known public resolvers (Cloudflare 1.1.1.1/1.0.0.1, Google 8.8.8.8/8.8.4.4, Quad9 9.9.9.9/149.112.112.112, OpenDNS 208.67.222.222/208.67.220.220). Anything matching neither is a warn, naming the specific unrecognised address.",
+      "what_would_make_it_wrong": "Plenty of legitimate public resolvers exist beyond the four bundled providers -- this allowlist is deliberately small and will warn on a perfectly reputable resolver it simply doesn't recognise, which is why this is a warn (needs your judgement) rather than a fail (assumed wrong).",
+      "glossary_terms": [
+        "dns",
+        "gateway"
+      ],
+      "worked_example": {
+        "scenario": "DNS servers configured: 192.168.1.1 (the router) and 76.76.2.0 (an unrecognised public address).",
+        "walkthrough": [
+          "192.168.1.1 is private -- evidence: 'private/local network'.",
+          "76.76.2.0 is neither private nor in the known-provider list -- evidence: 'unrecognized public address'.",
+          "One unrecognised address is enough to warn, naming 76.76.2.0 specifically."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "ipv6_state",
+      "title": "What 'IPv6 configuration is intentional' checks",
+      "plain": "IPv6 is on by default in Windows and, unlike IPv4 behind NAT, often has no NAT boundary at all -- a globally routable IPv6 address can make a service bound to all interfaces directly reachable from the internet if the firewall doesn't separately cover the IPv6 stack the same way it covers IPv4.",
+      "how_it_decides": "Reads the DisabledComponents registry value. This check is purely informational: it always reports 'pass', simply stating whichever value (or absence) it found as evidence, rather than judging IPv6 being on or off as right or wrong.",
+      "what_would_make_it_wrong": "There is no fail or warn outcome to be wrong about here by design -- the check exists so the current state is visible and considered on purpose, not because IPv6 being enabled is itself a problem.",
+      "glossary_terms": [
+        "ip_address",
+        "nat"
+      ],
+      "worked_example": {
+        "scenario": "DisabledComponents is not configured at all.",
+        "walkthrough": [
+          "Absent means IPv6 is fully enabled (Windows default) on all components -- reported as a pass with that state as evidence, for you to confirm matches what you intend."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "ip_forwarding_disabled",
+      "title": "What 'IP forwarding is disabled' checks",
+      "plain": "IP forwarding turns this workstation into a router, relaying packets between whatever networks it's attached to at once -- Wi-Fi and a USB-tethered phone, or a VPN and the LAN -- which silently defeats network segmentation unless that's exactly what you intended.",
+      "how_it_decides": "Reads the IPEnableRouter registry value. Truthy is a fail; falsy or absent (Windows' own default is 0, disabled) is a pass.",
+      "what_would_make_it_wrong": "Deliberate internet-connection-sharing or a purpose-built routing setup on this machine is the one legitimate reason this would be on -- rare on a personal workstation, plausible if this machine is intentionally acting as a gateway for something else.",
+      "glossary_terms": [
+        "nat",
+        "gateway"
+      ],
+      "worked_example": {
+        "scenario": "IPEnableRouter reads 1.",
+        "walkthrough": [
+          "Truthy value -- the check fails: 'this machine forwards IP packets between interfaces'."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "promiscuous_adapters",
+      "title": "What 'no adapters are bound to a packet-capture driver' checks",
+      "plain": "Windows has no public API that exposes a true 'promiscuous mode' flag, so this is explicitly a heuristic, not a direct measurement: it looks for adapter bindings to known packet-capture drivers instead, which is a proxy for 'something on this machine can sniff traffic on that link'.",
+      "how_it_decides": "Checks Get-NetAdapterBinding for any enabled binding whose ComponentID matches a known capture-driver set (Npcap, WinPcap, and similar variants). Any match is a warn, naming the adapter and driver -- never a fail, since a capture driver being present isn't inherently wrong, and this check cannot itself distinguish a tool you installed on purpose from one you didn't.",
+      "what_would_make_it_wrong": "NetAudit itself may use exactly this kind of capture driver to do its own job -- a warn here can simply mean 'this tool (or Wireshark, or another legitimate analyser) is installed and working as intended', not evidence of anything unwanted.",
+      "glossary_terms": [
+        "promiscuous_mode",
+        "pcap"
+      ],
+      "worked_example": {
+        "scenario": "Get-NetAdapterBinding shows the Wi-Fi adapter with ComponentID 'npcap', Enabled=True.",
+        "walkthrough": [
+          "'npcap' is in the known capture-driver set and the binding is enabled -- the check warns, naming the adapter and driver, asking you to confirm it's intentional."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "unused_adapters_enabled",
+      "title": "What 'no enabled-but-disconnected adapters' checks",
+      "plain": "An adapter that's enabled but never actually connected -- an old VPN virtual adapter, an unused Bluetooth PAN, a leftover virtual switch -- still runs its network stack and is a small, avoidable piece of extra attack surface.",
+      "how_it_decides": "Filters to physical (non-virtual) adapters, then flags any with AdminStatus 'Up' but Status not 'Up' (i.e. administratively enabled but not actually connected). Any such adapter is a warn, listing it by name -- never a fail, since this is a hygiene nicety, not a binary misconfiguration.",
+      "what_would_make_it_wrong": "A laptop's Wi-Fi adapter reads exactly this way (enabled, not connected) whenever it's simply not near a known network at scan time -- this check flags the state, not necessarily a genuine leftover you forgot about.",
+      "glossary_terms": [],
+      "worked_example": {
+        "scenario": "A physical Bluetooth PAN adapter shows AdminStatus=Up, Status=Disconnected.",
+        "walkthrough": [
+          "Enabled but not connected -- the check warns, naming that adapter."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "network_profile_public",
+      "title": "What 'active network connections are categorized correctly' checks",
+      "plain": "Windows relaxes firewall defaults and enables discovery/sharing features on networks categorised Private or Domain, and locks them down on Public. A trusted home network mis-categorised as Public is a minor inconvenience; an untrusted network (coffee-shop Wi-Fi) mis-categorised as Private exposes file sharing and discovery you didn't mean to expose.",
+      "how_it_decides": "Reads Get-NetConnectionProfile for every active connection. If at least one active connection is categorised Public, that's a pass (the most restrictive posture is present somewhere). If none are Public -- meaning everything active is Private/Domain -- that's a warn asking you to confirm every one of those networks is actually trusted. No active connections at all is 'skipped'.",
+      "what_would_make_it_wrong": "This check cannot know whether a network genuinely deserves Private trust -- a warn here doesn't mean the categorisation is wrong, only that nothing in the current active set is locked down to Public, which is worth a second look if any of those networks shouldn't be fully trusted.",
+      "glossary_terms": [
+        "firewall"
+      ],
+      "worked_example": {
+        "scenario": "One active connection: Home Wi-Fi, NetworkCategory=Private.",
+        "walkthrough": [
+          "No active connection is Public -- the check warns: 'all 1 are Private/Domain -- confirm every one of these networks is actually trusted'."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "wifi_encryption_strength",
+      "title": "What 'currently connected Wi-Fi uses strong encryption' checks",
+      "plain": "WEP is broken and crackable in minutes with widely available tools; WPA/TKIP is deprecated and vulnerable to known keystream attacks. Anyone within radio range of a weakly-encrypted network can potentially decrypt, or inject into, this machine's Wi-Fi traffic.",
+      "how_it_decides": "Parses netsh wlan show interfaces for the currently connected network's Authentication and Cipher fields. Open/Shared/WEP authentication, or WEP appearing in the cipher, is a fail. TKIP in the cipher, or plain WPA (not WPA2/3) authentication, is a warn (deprecated but not the worst case). Anything else (WPA2/WPA3 with AES) is a pass. No wireless adapter, or an adapter present but not connected, is 'skipped'.",
+      "what_would_make_it_wrong": "The actual fix here lives on the access point/router, not this machine -- this check reports what this machine observed about the network it joined, which is real information even though the remediation isn't local.",
+      "glossary_terms": [],
+      "worked_example": {
+        "scenario": "netsh reports State=connected, Authentication=WPA2-Personal, Cipher=AES.",
+        "walkthrough": [
+          "Authentication isn't in the weak set (open/shared/wep), and cipher isn't WEP or TKIP -- the check passes."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "wifi_open_networks_saved",
+      "title": "What 'no saved Wi-Fi profiles are open networks' checks",
+      "plain": "Every saved Wi-Fi profile is a network this machine will automatically consider joining later. A saved open network is an easy impersonation target: an attacker only has to broadcast the same network name nearby, and this machine may connect to it with zero encryption.",
+      "how_it_decides": "Enumerates saved profiles (netsh wlan show profiles, then per-profile security type). Any saved profile with Open/Shared/WEP authentication is a fail, listing every offending profile by name.",
+      "what_would_make_it_wrong": "Removing a saved open-network profile means re-entering any needed details to rejoin it later -- and because the network itself is open, there's no encrypted equivalent to fall back to, so this is a genuine one-way action, not a config toggle.",
+      "glossary_terms": [],
+      "worked_example": {
+        "scenario": "Saved profiles: 'HomeWiFi' (WPA2-Personal), 'CafeGuest' (Open).",
+        "walkthrough": [
+          "'CafeGuest' has Open authentication -- the check fails, naming it as the offending saved profile."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "wifi_autoconnect_open",
+      "title": "What 'no open network is set to auto-connect' checks",
+      "plain": "A saved open network with auto-connect enabled means this machine will silently join any matching network name in range without asking first -- exactly the setup an evil-twin or rogue-access-point attack relies on to get onto an attacker-controlled network unattended.",
+      "how_it_decides": "Among saved profiles, flags any with both Open/Shared/WEP authentication *and* connection_mode containing 'auto'. Any match is a fail, listing the profile by name.",
+      "what_would_make_it_wrong": "This only evaluates saved profiles this tool can enumerate -- it cannot see auto-connect behaviour configured through a third-party Wi-Fi manager utility that bypasses the native profile store.",
+      "glossary_terms": [],
+      "worked_example": {
+        "scenario": "Saved profile 'CafeGuest': authentication=Open, connection_mode=auto.",
+        "walkthrough": [
+          "Open authentication and auto connection mode both match -- the check fails, naming 'CafeGuest'."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "tls10_11_disabled",
+      "title": "What 'TLS 1.0 and 1.1 are disabled' checks",
+      "plain": "TLS 1.0/1.1 lack modern authenticated-encryption ciphers and have known weaknesses (BEAST and POODLE-adjacent padding issues). Leaving them enabled lets an on-path attacker force a downgrade on outbound connections this machine makes, or lets an old client negotiate a weaker session against anything this machine serves.",
+      "how_it_decides": "Reads the SCHANNEL registry state for TLS 1.0 and TLS 1.1, client and server roles (4 registry reads total). All four explicitly disabled is a pass. Any explicitly enabled is a fail. If none are explicitly configured either way, it's a warn: Windows 11's OS default for these protocols is disabled at the negotiation level for most callers, but that default isn't visible in the registry, so the check reports 'not verifiable' rather than assuming either state.",
+      "what_would_make_it_wrong": "A warn here specifically does not mean TLS 1.0/1.1 are actually enabled -- it means the registry doesn't say either way, and the check deliberately won't assume the OS default is doing the work for you without being able to confirm it.",
+      "glossary_terms": [
+        "tls"
+      ],
+      "worked_example": {
+        "scenario": "All four registry values (client/server x TLS 1.0/1.1) are unset.",
+        "walkthrough": [
+          "None of the four states can be read as True or False -- the check warns: 'not explicitly configured (relying on OS default, not verifiable from the registry)'."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "ssl3_disabled",
+      "title": "What 'SSL 3.0 is disabled' checks",
+      "plain": "SSL 3.0 is broken by the POODLE padding-oracle attack, which lets an attacker who can intercept traffic decrypt it byte-by-byte. There is no legitimate reason to keep it negotiable at all.",
+      "how_it_decides": "Same SCHANNEL-registry pattern as TLS 1.0/1.1, but for SSL 3.0 only (client + server, 2 reads). Both explicitly disabled is a pass; either explicitly enabled is a fail; neither configured is a warn ('not verifiable from the registry').",
+      "what_would_make_it_wrong": "As with TLS 1.0/1.1, a warn here means unknown, not enabled -- there's no legitimate scenario where SSL 3.0 needs to stay on, so this check has essentially no honest false-positive case on the fail side, only the warn's genuine unknowability.",
+      "glossary_terms": [
+        "tls"
+      ],
+      "worked_example": {
+        "scenario": "SSL 3.0 Client reads Enabled=0, Server reads Enabled=0 (both explicitly disabled).",
+        "walkthrough": [
+          "Both explicitly disabled -- the check passes."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "weak_ciphers_disabled",
+      "title": "What 'no weak cipher suites are enabled' checks",
+      "plain": "RC4 has known keystream biases, DES/3DES are trivially brute-forced or fall to the Sweet32 attack, and NULL ciphers provide no encryption at all. Any of these remaining enabled means a downgrade attack can force a connection onto one of them.",
+      "how_it_decides": "Reads Get-TlsCipherSuite and checks every enabled suite's name for the substrings RC4, DES, NULL, MD5, or EXPORT. Any match is a fail, listing up to the first several weak suites found by name.",
+      "what_would_make_it_wrong": "This only sees what's enabled at the OS cipher-suite level -- it can't tell you whether any specific connection actually negotiated one of these weak suites, only that the option to do so exists.",
+      "glossary_terms": [
+        "tls",
+        "encryption"
+      ],
+      "worked_example": {
+        "scenario": "Enabled suites include 'TLS_RSA_WITH_RC4_128_SHA' among otherwise modern suites.",
+        "walkthrough": [
+          "'RC4' appears in that suite name -- the check fails, listing it as a weak enabled suite."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "certificate_store_anomalies",
+      "title": "What 'no expired certificates remain trusted as roots' checks",
+      "plain": "A trusted root certificate past its expiry date is a sign the certificate store hasn't been maintained -- and since some validators don't strictly enforce root expiry, any chain still validating against it is trust that should have lapsed but technically hasn't.",
+      "how_it_decides": "Enumerates Cert:\\LocalMachine\\Root and compares each certificate's NotAfter date to now. Any expired root is a warn (not a fail -- this is informational/heuristic), listing the certificate subject and expiry date, up to the first several found.",
+      "what_would_make_it_wrong": "The Trusted Root store accumulates entries from Windows updates, software installers, and enterprise policy over years -- an expired root sitting unused and never actually chained-to by anything is a common, low-risk kind of clutter, not necessarily an active exposure, which is part of why this is a warn rather than a fail.",
+      "glossary_terms": [
+        "certificate",
+        "tls"
+      ],
+      "worked_example": {
+        "scenario": "2 root certificates found; one has NotAfter dated three years in the past.",
+        "walkthrough": [
+          "1 of 2 certificates is expired -- the check warns, listing that certificate's subject and expiry date."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "listening_on_all_interfaces",
+      "title": "What 'few services bind to all interfaces' checks",
+      "plain": "A service bound to 0.0.0.0 or :: accepts connections from every network this machine is attached to -- including an untrusted public Wi-Fi network -- rather than only from this machine itself. Binding to 127.0.0.1 when only local access is needed removes that exposure entirely.",
+      "how_it_decides": "Enumerates listening sockets (psutil) and flags every one bound to 0.0.0.0 or ::. Any such listener is a warn, not a fail -- being bound broadly isn't automatically wrong, since plenty of services (a file server, a media server) are supposed to be reachable from the LAN.",
+      "what_would_make_it_wrong": "The bind address alone doesn't tell you the actual reachability -- a firewall rule can already restrict a 0.0.0.0-bound service to the LAN only, which this check has no visibility into; it only reports the bind address, not the effective exposure after firewalling.",
+      "glossary_terms": [
+        "port",
+        "loopback"
+      ],
+      "worked_example": {
+        "scenario": "A listening socket: process 'node.exe', bound to 0.0.0.0:8080.",
+        "walkthrough": [
+          "0.0.0.0 is in the 'any address' set -- the check warns, listing this listener among the broad-bound set."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "high_risk_ports_open",
+      "title": "What 'no high-risk legacy service ports are reachable' checks",
+      "plain": "Ports like FTP (21), Telnet (23), SMB (445), and RDP (3389) are the most commonly scanned-for and exploited services on the internet and on LANs alike. One reachable on a non-loopback address is a standing target for automated exploitation tooling, not a theoretical risk.",
+      "how_it_decides": "Enumerates listening sockets and flags any bound to something other than 127.0.0.1/::1 on one of a fixed high-risk port list (21, 23, 135, 139, 445, 1433, 1434, 3306, 3389, 5432, 5900, 6379, 27017). Any match is a fail, naming the service and port.",
+      "what_would_make_it_wrong": "Some of these ports (5432 PostgreSQL, 3306 MySQL, 6379 Redis, 27017 MongoDB) are entirely legitimate for a development machine that's deliberately running a local database server -- the risk is real specifically when it's reachable beyond loopback, which is exactly what this check measures, not the mere presence of the service.",
+      "glossary_terms": [
+        "port",
+        "smb",
+        "rdp"
+      ],
+      "worked_example": {
+        "scenario": "A listening socket: SMB on 0.0.0.0:445.",
+        "walkthrough": [
+          "0.0.0.0 is not loopback, and 445 is in the high-risk port set (labeled 'SMB') -- the check fails, naming 'SMB (445)' as reachable on a non-loopback address."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "unexpected_listeners",
+      "title": "What 'no unexpected processes are listening for inbound connections' checks",
+      "plain": "Most user-installed software has no business accepting inbound network connections at all. A process you don't recognise with an open listening socket is one of the more reliable signals of malware, a forgotten dev server, or bundled remote-access software you didn't intend to run.",
+      "how_it_decides": "Compares each listening socket's owning process name against a small baseline of processes expected to listen on a fresh Windows install (System, svchost.exe, lsass.exe, services.exe, and similar). Anything outside that baseline is a warn, not a fail -- this is explicitly informational, meant for your own review, not a verdict.",
+      "what_would_make_it_wrong": "Ordinary, entirely legitimate software -- a game server, a local dev server, sync software, this very tool -- listens for inbound connections as part of normal operation and isn't in the tiny system baseline; a warn here is the expected, common case on almost any real machine, not evidence of a problem.",
+      "glossary_terms": [
+        "port"
+      ],
+      "worked_example": {
+        "scenario": "A listening socket owned by 'python.exe', a local dev server on 127.0.0.1:8000.",
+        "walkthrough": [
+          "'python.exe' isn't in the expected-listener baseline -- the check warns, listing it among unexpected listeners, purely for your own review."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "upnp_disabled",
+      "title": "What 'UPnP discovery/port-mapping services are disabled' checks",
+      "plain": "UPnP lets any device or piece of software on the LAN ask this machine, or the router, to automatically open inbound ports, with no authentication at all. It's a convenience feature that doubles as a standing invitation for malware or a compromised IoT device on the same network to punch a hole outward.",
+      "how_it_decides": "Reads the status of the SSDPSRV and upnphost services. Either one Running is a warn, listing which -- not a fail, since UPnP does have genuine convenience uses (game console connectivity, some media devices).",
+      "what_would_make_it_wrong": "Plenty of home setups genuinely rely on UPnP for game consoles, casting devices, and some media/smart-home apps to work without manual port-forwarding -- disabling it can break that connectivity, which is exactly why this is a warn rather than an unconditional fail.",
+      "glossary_terms": [
+        "nat"
+      ],
+      "worked_example": {
+        "scenario": "SSDPSRV: Status=Running; upnphost: Status=Running.",
+        "walkthrough": [
+          "Both services running -- the check warns, naming both."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "defender_realtime_enabled",
+      "title": "What 'Microsoft Defender real-time protection is enabled' checks",
+      "plain": "Real-time protection is what catches malware at write/execute time, before it has a chance to act. With it off, this machine is only ever scanned on whatever schedule you remember to run manually -- most infections would be caught in the exact seconds it's off, not found afterwards.",
+      "how_it_decides": "Reads RealTimeProtectionEnabled from Get-MpComputerStatus. Exactly True is a pass; anything else is a fail.",
+      "what_would_make_it_wrong": "If another antivirus product is installed and active, Windows may deliberately keep Defender's real-time engine off to avoid the two products conflicting -- worth checking for a genuinely active third-party AV before treating this fail as unprotected rather than differently protected.",
+      "glossary_terms": [],
+      "worked_example": {
+        "scenario": "Get-MpComputerStatus reports RealTimeProtectionEnabled=False, AntivirusEnabled=True.",
+        "walkthrough": [
+          "RealTimeProtectionEnabled isn't True -- the check fails, even though overall antivirus is enabled, because real-time protection specifically is off."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "defender_signatures_current",
+      "title": "What 'Defender signatures are current' checks",
+      "plain": "Signature-based detection is only as good as its last update. Signatures more than a week old miss every threat catalogued since then -- an antivirus running on stale signatures gives a false sense of protection.",
+      "how_it_decides": "Reads AntivirusSignatureAge and AntispywareSignatureAge (in days) from Get-MpComputerStatus, and fails if the older of the two exceeds 7 days. Neither age being reported at all is an error, not an assumed pass.",
+      "what_would_make_it_wrong": "A machine that's been offline (travel, storage) for over a week will fail this the moment it reconnects, purely from elapsed time, before Windows Update has had a chance to catch up -- the fix in that case is just letting it update, not evidence of a deeper misconfiguration.",
+      "glossary_terms": [],
+      "worked_example": {
+        "scenario": "AntivirusSignatureAge=9, AntispywareSignatureAge=6.",
+        "walkthrough": [
+          "max(9, 6) = 9, which is > 7 -- the check fails: 'Signatures are 9 day(s) old'."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "windows_update_current",
+      "title": "What 'Windows Update has installed updates recently' checks",
+      "plain": "Patch age is a direct measure of exposure to every publicly disclosed vulnerability fixed since the last successful update -- attackers routinely weaponise a patched CVE within days of its Patch Tuesday disclosure, specifically targeting machines that haven't updated yet.",
+      "how_it_decides": "Reads the registry's LastSuccessTime for Windows Update installs, parses it, and fails if more than 45 days have elapsed since. An unparseable or missing timestamp is an error, not an assumed pass or fail.",
+      "what_would_make_it_wrong": "A machine that's been powered off or offline for an extended stretch (long trip, seasonal storage) will naturally fail this on reconnection purely due to elapsed time -- the remediation (install pending updates) resolves it either way, but the cause isn't necessarily neglect.",
+      "glossary_terms": [],
+      "worked_example": {
+        "scenario": "LastSuccessTime parses to 60 days ago.",
+        "walkthrough": [
+          "60 > 45 (UPDATE_MAX_AGE_DAYS) -- the check fails: 'Last successful update was 60 day(s) ago'."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "uac_enabled",
+      "title": "What 'User Account Control is enabled' checks",
+      "plain": "UAC is the boundary between a standard user token and an elevated administrator token. With it off, every process a logged-in administrator runs -- including malware tricked into being launched -- runs fully elevated with no prompt at all.",
+      "how_it_decides": "Reads EnableLUA from the registry. Exactly 1 is a pass; anything else is a fail.",
+      "what_would_make_it_wrong": "There's essentially no legitimate reason to run with UAC off on a modern machine -- some genuinely ancient software written before UAC existed may start prompting or misbehaving once it's back on, which is a compatibility cost worth knowing about, not a reason the fail itself is wrong.",
+      "glossary_terms": [],
+      "worked_example": {
+        "scenario": "EnableLUA reads 0.",
+        "walkthrough": [
+          "Not equal to 1 -- the check fails: 'EnableLUA = 0 (UAC is disabled)'."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "bitlocker_status",
+      "title": "What 'the system drive is BitLocker-protected' checks",
+      "plain": "Without disk encryption, anyone with physical access to this machine can remove the drive, mount it on another computer, and read every file on it -- including cached credentials and browser data -- with no need to log in at all.",
+      "how_it_decides": "Reads Get-BitLockerVolume (given extra time budget -- this WMI provider is measurably slower than a plain Get-* cmdlet) and checks the system volume's ProtectionStatus. 'On' is a pass; anything else is a fail. If no volumes are returned at all while not running elevated, that's an error with a specific admin hint, since this cmdlet is known to be unreliable without elevation on some Windows editions -- the check would rather say 'can't tell, try elevated' than guess.",
+      "what_would_make_it_wrong": "Windows 11 Home doesn't include BitLocker at all (only the narrower-requirements Device Encryption), and BitLocker itself needs a TPM or a USB key on some editions -- an error or fail here can reflect what the specific edition/hardware supports, not necessarily a choice not to encrypt.",
+      "glossary_terms": [],
+      "worked_example": {
+        "scenario": "Running unelevated; Get-BitLockerVolume returns no volumes.",
+        "walkthrough": [
+          "No system volumes found, and the scan wasn't elevated -- the check errors with an explicit hint to re-run as Administrator, rather than reporting an unverified pass or fail."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "guest_account_disabled",
+      "title": "What 'the built-in Guest account is disabled' checks",
+      "plain": "Guest is a well-known, unauthenticated or trivially-authenticated local account name that attackers try first. Left enabled, it's a free foothold for anything on the network that can reach an SMB or logon surface on this machine.",
+      "how_it_decides": "Looks up the local user named 'Guest'. If it doesn't exist at all, the check is 'skipped'. If it exists and Enabled is true, that's a fail; disabled is a pass.",
+      "what_would_make_it_wrong": "There is essentially no legitimate reason to keep Guest enabled on a personally administered machine -- this is one of the more clear-cut fails in the catalogue.",
+      "glossary_terms": [],
+      "worked_example": {
+        "scenario": "Local user 'Guest' exists with Enabled=True.",
+        "walkthrough": [
+          "Guest account is enabled -- the check fails."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "local_admin_count",
+      "title": "What 'the local Administrators group has a small, expected membership' checks",
+      "plain": "Every account in the Administrators group is a full compromise of this machine if that one account's credentials leak. Each additional admin -- a forgotten service account, an old installer-created account -- is another way in that gets easier to lose track of over time.",
+      "how_it_decides": "Enumerates Administrators group membership and warns if the count exceeds 2 (_MAX_EXPECTED_ADMINS) -- never a fail, since this is a soft threshold rather than a binary misconfiguration, and some machines genuinely need more than two.",
+      "what_would_make_it_wrong": "A shared family machine, or one with a separate account for day-to-day use plus a true admin account, commonly has more than two legitimate admin members without anything being wrong -- this check flags count, not identity, and is meant as a prompt to review who's actually in the group.",
+      "glossary_terms": [],
+      "worked_example": {
+        "scenario": "Administrators group has 4 members.",
+        "walkthrough": [
+          "4 > 2 (_MAX_EXPECTED_ADMINS) -- the check warns, listing all 4 names."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "blank_passwords",
+      "title": "What 'no local account allows a blank password' checks",
+      "plain": "An account with PasswordRequired = False can be logged into -- locally, over RDP if enabled, or via SMB -- with no password at all. It's the same exposure as a leaked credential, except nothing needed to leak in the first place.",
+      "how_it_decides": "Checks every enabled local user's PasswordRequired flag. Any enabled account with PasswordRequired = False is a fail, naming every such account.",
+      "what_would_make_it_wrong": "This only sees the PasswordRequired flag itself, not whether the account is otherwise unusable (disabled shell, no network logon rights) -- a genuinely locked-down blank-password account would still show as a fail here even if some other control happens to limit its practical reach.",
+      "glossary_terms": [],
+      "worked_example": {
+        "scenario": "Enabled user 'ServiceAcct' has PasswordRequired=False.",
+        "walkthrough": [
+          "PasswordRequired is False on an enabled account -- the check fails, naming 'ServiceAcct'."
+        ]
+      }
+    },
+    {
+      "kind": "check",
+      "id": "autologon_disabled",
+      "title": "What 'automatic logon is disabled' checks",
+      "plain": "Automatic logon skips the login prompt entirely -- anyone who can power on or restart this machine gets a fully logged-in session with no credentials at all. If it's configured with a stored password, that password sits in the registry in plaintext, readable by any process or account that can read HKLM.",
+      "how_it_decides": "Reads AutoAdminLogon and whether a DefaultPassword value is stored. AutoAdminLogon='1' with a stored DefaultPassword is a fail, explicitly calling out the plaintext-password case as worse. AutoAdminLogon='1' alone (no stored password) is still a fail, just without that specific extra detail. Neither condition is a pass.",
+      "what_would_make_it_wrong": "There's no legitimate justification for a stored plaintext password specifically -- but automatic logon itself, without a stored password, is sometimes a deliberate choice on a kiosk-type machine with no sensitive data and no other users who could reach it physically; the check still fails that case, since the physical-access risk is real regardless of the reason.",
+      "glossary_terms": [],
+      "worked_example": {
+        "scenario": "AutoAdminLogon='1', DefaultPassword is present in the registry.",
+        "walkthrough": [
+          "AutoAdminLogon is '1' and a password is stored -- the check fails, specifically noting the plaintext password: 'Automatic logon is enabled with a plaintext password stored in the registry'."
+        ]
+      }
+    },
+    {
+      "kind": "metric",
+      "id": "throughput_bps",
+      "title": "What 'throughput (bps)' means",
+      "plain": "How much data is actually moving right now, measured in bits per second -- what NetAudit observed, not the theoretical capacity of your connection, which it has no way to measure directly.",
+      "how_it_decides": "Computed as bytes observed in a short window, converted to bits (x8) and divided by the window's length in seconds. NetAudit reports both directions (in/out) and totals across the windows it tracks (5 minutes up to 24 hours).",
+      "what_would_make_it_wrong": "A short averaging window makes throughput look spikier than it 'really' is; a longer one smooths out real bursts. Neither is wrong -- they're answering slightly different questions ('what's happening right now' vs 'what's typical').",
+      "glossary_terms": [
+        "bandwidth",
+        "flow"
+      ],
+      "worked_example": {
+        "scenario": "1,250,000 bytes are observed moving outbound over a 10-second window.",
+        "walkthrough": [
+          "Bits = 1,250,000 x 8 = 10,000,000 bits.",
+          "Throughput = 10,000,000 / 10 = 1,000,000 bps = 1 Mbps."
+        ]
+      }
+    },
+    {
+      "kind": "metric",
+      "id": "coefficient_of_variation",
+      "title": "What 'coefficient of variation' (CV) means",
+      "plain": "A single number that says how spread out a set of values is, relative to their own average -- the statistic several detectors use to ask 'how regular is this timing (or size)?'.",
+      "how_it_decides": "CV = standard deviation / mean. A CV near 0 means the values are almost identical to each other (very regular); a CV of 1.0 means the spread is as large as the average itself (very irregular). It's unitless, which is what makes it comparable across completely different scales -- a CV of 0.02 on 60-second gaps means the same 'how regular' thing as a CV of 0.02 on 5-minute gaps.",
+      "what_would_make_it_wrong": "CV becomes unstable and hard to interpret with very few samples, or when the mean is close to zero -- which is exactly why beaconing-style detectors require a minimum contact count before computing it at all, rather than trusting a CV computed from two or three data points.",
+      "glossary_terms": [
+        "beaconing",
+        "c2",
+        "baseline"
+      ],
+      "worked_example": {
+        "scenario": "Inter-arrival gaps of 60, 61, 59, 60, 61, 59, 60 seconds (7 gaps).",
+        "walkthrough": [
+          "Mean = (60+61+59+60+61+59+60)/7 = 420/7 = 60.0s.",
+          "Deviations from the mean: 0, 1, -1, 0, 1, -1, 0. Squared: 0,1,1,0,1,1,0 -> sum=4, /7 = 0.571, sqrt ~=0.756.",
+          "CV = 0.756 / 60.0 ~= 0.0126 -- very regular, well under a typical 0.15 beaconing threshold."
+        ]
+      }
+    },
+    {
+      "kind": "metric",
+      "id": "entropy",
+      "title": "What '(Shannon) entropy' means, in this tool",
+      "plain": "A measure, in bits, of how unpredictable a string looks character by character -- used to tell 'real word/name' apart from 'looks randomly generated', which is exactly the distinction dns_tunneling and dga_domains are built around.",
+      "how_it_decides": "For a string, entropy = -sum(p(c) * log2(p(c))) over each distinct character c, where p(c) is that character's frequency in the string. A string using few, repeated characters has low entropy (predictable); one using many different characters roughly evenly has high entropy (closer to random). English words typically sit somewhere in the middle; a long block of random hex or base32 sits noticeably higher.",
+      "what_would_make_it_wrong": "Entropy alone doesn't know the difference between 'malicious DGA output' and 'legitimate hashed asset filename' or 'CDN edge hostname' -- both are high-entropy by the same measure, which is exactly the documented false-positive case for both dns_tunneling and dga_domains.",
+      "glossary_terms": [
+        "dns_tunneling",
+        "dga"
+      ],
+      "worked_example": {
+        "scenario": "The label 'xqzfpltbvk' (10 characters, all distinct).",
+        "walkthrough": [
+          "Each of the 10 characters appears exactly once, so each has probability 1/10.",
+          "Entropy = -10 * (1/10 * log2(1/10)) = -log2(0.1) ~= 3.32 bits per character.",
+          "Compare to a repetitive string like 'aaaaaaaaaa': entropy = 0 (fully predictable)."
+        ]
+      }
+    },
+    {
+      "kind": "metric",
+      "id": "confidence",
+      "title": "What 'confidence' means on a finding",
+      "plain": "How sure the detector or rule is that what it found is actually significant, expressed as 0 to 1 (or shown as a percentage) -- separate from severity, which is about how bad the finding would be *if* it's real.",
+      "how_it_decides": "Each detector/rule computes confidence its own way -- some combine multiple independent signals (more agreeing signals, higher confidence), some scale directly with a statistic like CV (c2_beaconing: a lower, more regular CV pushes confidence up), and some are close to fixed (a firm port-based match like credentials_plaintext on FTP). There's no single formula across the whole catalogue -- each explanation here documents its own.",
+      "what_would_make_it_wrong": "Confidence reflects how well the *pattern* matches, not whether the underlying activity is actually malicious -- a software update checker can produce a beaconing pattern the detector is highly confident about, and be completely benign. High confidence is 'this is definitely the pattern', not 'this is definitely bad'.",
+      "glossary_terms": [
+        "false_positive"
+      ]
+    },
+    {
+      "kind": "metric",
+      "id": "severity",
+      "title": "What 'severity' means on a finding",
+      "plain": "How bad the underlying issue would be if it's a real, confirmed problem -- independent of how likely it is to actually be one. The vocabulary across this whole tool is critical, high, medium, low, info.",
+      "how_it_decides": "For posture checks, severity is fixed per check (it describes the risk of that category of misconfiguration existing at all, e.g. blank_passwords is critical, wifi_open_networks_saved is medium) and doesn't change based on the specific evidence found. For threats and recommendations, severity is set per finding based on what was actually observed (e.g. listening_exposed rates SMB/RDP higher than an unrecognised port).",
+      "what_would_make_it_wrong": "Severity says nothing about certainty -- a critical-severity finding with low confidence (a plausible but unconfirmed pattern) can be less urgent in practice than a medium-severity finding the tool is completely sure about. D6's prioritisation combines both, rather than sorting on severity alone.",
+      "glossary_terms": []
+    },
+    {
+      "kind": "metric",
+      "id": "risk",
+      "title": "What 'risk' means, distinct from severity and confidence",
+      "plain": "The practical, combined sense of 'how much does this actually matter, right now, on this machine' -- informally, something like severity multiplied by how sure the tool is (confidence) and how easy it would be for someone to actually exploit it.",
+      "how_it_decides": "This tool doesn't compute a single universal 'risk' number the way it computes severity or confidence individually -- where you see a risk-flavoured ranking (most concretely, D6's impact_score in /api/findings/prioritised), it's derived from severity, status/confidence, how cheap the fix is, and -- for a documented, specific set of findings -- whether the issue is itself a well-known, credential-free attack path.",
+      "what_would_make_it_wrong": "Any single risk number necessarily compresses several different judgements into one -- it's a starting point for what to look at first, not a replacement for reading the actual finding and deciding whether it matters in your specific situation.",
+      "glossary_terms": []
+    },
+    {
+      "kind": "field",
+      "id": "deep_link",
+      "title": "What a finding's 'deep link' means",
+      "plain": "A pointer telling the dashboard exactly where to take you to see this finding in context -- which view to open, and which specific item to highlight or scroll to within it.",
+      "how_it_decides": "Two parts: `view` (one of overview, traffic-log, connections, recommendations, posture, threats) and `id` (the specific item's own id within that view). The frontend uses this to jump straight there instead of leaving you to find it manually.",
+      "what_would_make_it_wrong": "A deep link can go stale if the item it points to has since been resolved, acknowledged, or aged out (a threat, for instance, can move to 'resolved' after its cooldown) -- following one to nothing found usually means the underlying issue is no longer current, not that the link itself is broken.",
+      "glossary_terms": []
+    },
+    {
+      "kind": "field",
+      "id": "evidence",
+      "title": "What a finding's 'evidence' list means",
+      "plain": "The specific, concrete facts a check or finding is based on -- the actual observed values, not just the conclusion drawn from them.",
+      "how_it_decides": "A list of label/value pairs (e.g. {'label': 'RequireSecuritySignature', 'value': 'False'}) attached directly to the raw data a check read or a detector measured, so you can verify the reasoning yourself rather than take the pass/fail/severity at face value.",
+      "what_would_make_it_wrong": "Evidence is a snapshot at the moment the check or detector ran -- if you fix the underlying issue, the evidence shown for a past finding doesn't retroactively update; re-running the check is what confirms the fix took effect.",
+      "glossary_terms": []
+    }
+  ]
+}
