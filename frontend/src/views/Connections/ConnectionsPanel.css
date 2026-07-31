@@ -1,0 +1,22 @@
+.conn-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.conn-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 2px 8px;
+  font-size: 12px;
+}
+
+.conn-group-process {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.conn-group-total {
+  color: var(--text-secondary);
+}

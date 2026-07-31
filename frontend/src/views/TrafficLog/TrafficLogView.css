@@ -1,0 +1,20 @@
+.traffic-log-view {
+  display: flex;
+  flex-direction: column;
+}
+
+.pending-banner {
+  align-self: flex-start;
+  margin-bottom: 10px;
+  background: color-mix(in srgb, var(--series-1) 18%, var(--surface-1));
+  border: 1px solid color-mix(in srgb, var(--series-1) 50%, transparent);
+  color: var(--text-primary);
+  border-radius: var(--radius-md);
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pending-banner:hover {
+  background: color-mix(in srgb, var(--series-1) 26%, var(--surface-1));
+}

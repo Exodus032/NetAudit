@@ -1,0 +1,56 @@
+{
+  "_note": "Best-effort mapping of check id -> benchmark section references. Section numbers for CIS Microsoft Windows 11 v3.0.0 are approximate and should be verified against the published benchmark PDF before being used for a formal compliance attestation. Where a CIS section is not confidently known, a Microsoft Learn or NIST reference is used instead.",
+
+  "firewall_profiles_enabled": ["CIS Microsoft Windows 11 v3.0.0 9.1.1", "CIS Microsoft Windows 11 v3.0.0 9.2.1", "CIS Microsoft Windows 11 v3.0.0 9.3.1"],
+  "firewall_inbound_default_block": ["CIS Microsoft Windows 11 v3.0.0 9.1.2", "CIS Microsoft Windows 11 v3.0.0 9.2.2", "CIS Microsoft Windows 11 v3.0.0 9.3.2"],
+  "firewall_allow_rules_broad": ["NIST SP 800-41r1 Guidelines on Firewalls and Firewall Policy"],
+  "firewall_logging_enabled": ["CIS Microsoft Windows 11 v3.0.0 9.1.5", "CIS Microsoft Windows 11 v3.0.0 9.2.5", "CIS Microsoft Windows 11 v3.0.0 9.3.5"],
+
+  "smb1_disabled": ["CIS Microsoft Windows 11 v3.0.0 18.3.3", "Microsoft Learn: SMBv1 is not installed by default"],
+  "smb_signing_required": ["CIS Microsoft Windows 11 v3.0.0 2.3.9.1", "CIS Microsoft Windows 11 v3.0.0 2.3.9.2"],
+  "smb_guest_auth_disabled": ["CIS Microsoft Windows 11 v3.0.0 18.4.1", "Microsoft Learn: Guest access in SMB2 and SMB3"],
+  "smb_shares_exposed": ["CIS Microsoft Windows 11 v3.0.0 2.3.10.x file/print sharing guidance"],
+
+  "rdp_disabled_or_nla": ["CIS Microsoft Windows 11 v3.0.0 18.9.65.3.9", "CIS Microsoft Windows 11 v3.0.0 18.9.65.3.11"],
+  "winrm_exposure": ["CIS Microsoft Windows 11 v3.0.0 18.9.102.1"],
+  "remote_registry_disabled": ["CIS Microsoft Windows 11 v3.0.0 5.19"],
+  "psremoting_scope": ["CIS Microsoft Windows 11 v3.0.0 18.9.102.1", "Microsoft Learn: about_Remote_Troubleshooting"],
+
+  "llmnr_disabled": ["CIS Microsoft Windows 11 v3.0.0 18.5.4.2"],
+  "netbios_disabled": ["Microsoft Learn: NetBIOS over TCP/IP disable"],
+  "mdns_exposure": ["Microsoft Learn: mDNS support in Windows"],
+  "wpad_disabled": ["Microsoft Learn: WPAD is a legacy protocol"],
+  "dns_over_https": ["Microsoft Learn: DNS over HTTPS (DoH) support"],
+  "dns_servers_trusted": ["NIST SP 800-81-2 Secure Domain Name System (DNS) Deployment Guide"],
+
+  "ipv6_state": ["Microsoft Learn: Guidance for configuring IPv6 in Windows"],
+  "ip_forwarding_disabled": ["CIS Microsoft Windows 11 v3.0.0 18.5.4.1"],
+  "promiscuous_adapters": ["NIST SP 800-115 Technical Guide to Information Security Testing"],
+  "unused_adapters_enabled": ["CIS Microsoft Windows 11 v3.0.0 Attack Surface Reduction guidance"],
+  "network_profile_public": ["CIS Microsoft Windows 11 v3.0.0 9.1-9.3 firewall profile guidance"],
+
+  "wifi_encryption_strength": ["NIST SP 800-153 Guidelines for Securing WLANs"],
+  "wifi_open_networks_saved": ["NIST SP 800-153 Guidelines for Securing WLANs"],
+  "wifi_autoconnect_open": ["NIST SP 800-153 Guidelines for Securing WLANs"],
+
+  "tls10_11_disabled": ["CIS Microsoft Windows 11 v3.0.0 18.3.x SCHANNEL guidance", "Microsoft Learn: TLS 1.0 and 1.1 deprecation"],
+  "ssl3_disabled": ["CIS Microsoft Windows 11 v3.0.0 18.3.x SCHANNEL guidance"],
+  "weak_ciphers_disabled": ["NIST SP 800-52r2 Guidelines for TLS Implementations"],
+  "certificate_store_anomalies": ["NIST SP 800-57 Recommendation for Key Management"],
+
+  "listening_on_all_interfaces": ["CIS Microsoft Windows 11 v3.0.0 9.x firewall/attack surface guidance"],
+  "high_risk_ports_open": ["NIST SP 800-41r1 Guidelines on Firewalls and Firewall Policy"],
+  "unexpected_listeners": ["NIST SP 800-115 Technical Guide to Information Security Testing"],
+  "upnp_disabled": ["CIS Microsoft Windows 11 v3.0.0 18.5.x Network guidance"],
+
+  "defender_realtime_enabled": ["CIS Microsoft Windows 11 v3.0.0 18.9.45.x Windows Defender guidance"],
+  "defender_signatures_current": ["CIS Microsoft Windows 11 v3.0.0 18.9.45.x Windows Defender guidance"],
+  "windows_update_current": ["CIS Microsoft Windows 11 v3.0.0 18.9.108.x Windows Update guidance"],
+  "uac_enabled": ["CIS Microsoft Windows 11 v3.0.0 2.3.17.x User Account Control guidance"],
+  "bitlocker_status": ["CIS Microsoft Windows 11 v3.0.0 18.9.11.x BitLocker guidance"],
+
+  "guest_account_disabled": ["CIS Microsoft Windows 11 v3.0.0 2.3.1.2"],
+  "local_admin_count": ["CIS Microsoft Windows 11 v3.0.0 5.1 Administrators group guidance"],
+  "blank_passwords": ["CIS Microsoft Windows 11 v3.0.0 2.3.1.x password policy guidance"],
+  "autologon_disabled": ["Microsoft Learn: Turn on automatic logon (security risk if password is stored in plaintext)"]
+}

@@ -1,0 +1,36 @@
+.degraded-banner {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  background: color-mix(in srgb, var(--status-warning) 12%, var(--surface-1));
+  border: 1px solid color-mix(in srgb, var(--status-warning) 45%, transparent);
+  border-radius: var(--radius-lg);
+  padding: 12px 16px;
+  margin-bottom: 18px;
+}
+
+.degraded-icon {
+  color: var(--status-warning);
+  font-size: 18px;
+  flex: none;
+  margin-top: 1px;
+}
+
+.degraded-title {
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+  text-transform: capitalize;
+}
+
+.degraded-reason {
+  font-size: 13px;
+  color: var(--text-primary);
+  font-style: italic;
+  margin-bottom: 4px;
+}
+
+.degraded-explain {
+  font-size: 12px;
+  color: var(--text-secondary);
+}

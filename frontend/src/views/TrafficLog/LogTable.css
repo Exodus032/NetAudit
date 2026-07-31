@@ -1,0 +1,42 @@
+.log-table-container {
+  height: 62vh;
+  min-height: 360px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  position: relative;
+}
+
+.log-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.log-table-body {
+  table-layout: fixed;
+}
+
+.log-row {
+  cursor: pointer;
+  display: table;
+  width: 100%;
+}
+
+.log-row:hover td {
+  background: var(--surface-2);
+}
+
+.log-row.selected td {
+  background: color-mix(in srgb, var(--series-1) 16%, transparent);
+}
+
+.log-row:focus-visible td:first-child {
+  outline: 2px solid var(--series-1);
+  outline-offset: -2px;
+}
+
+.log-table td,
+.log-table th {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

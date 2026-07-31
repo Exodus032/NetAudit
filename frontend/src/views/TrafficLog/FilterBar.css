@@ -1,0 +1,93 @@
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.filter-input {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.filter-input:focus-visible {
+  outline: 2px solid var(--series-1);
+  outline-offset: 1px;
+}
+
+.filter-q {
+  min-width: 220px;
+  flex: 1 1 220px;
+}
+
+.filter-bytes {
+  width: 100px;
+}
+
+.filter-spacer {
+  flex: 1 1 auto;
+  display: none;
+}
+
+.filter-total {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.filter-tail-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.filter-tail-btn.active {
+  color: var(--text-primary);
+  border-color: var(--status-good);
+  background: color-mix(in srgb, var(--status-good) 12%, var(--surface-1));
+}
+.filter-tail-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+.filter-tail-btn.active .filter-tail-dot {
+  background: var(--status-good);
+}
+
+.filter-export {
+  display: flex;
+  gap: 4px;
+}
+
+.filter-export-btn {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.filter-export-btn:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+@media (min-width: 1100px) {
+  .filter-spacer {
+    display: block;
+  }
+}

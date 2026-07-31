@@ -1,0 +1,281 @@
+[
+  {
+    "value": "0.0.0.0/8",
+    "type": "cidr",
+    "category": "reserved_range",
+    "confidence": 0.2,
+    "source": "RFC 791 / IANA IPv4 Special-Purpose Address Registry",
+    "note": "\"This network\" / source-only address block. Should never appear as a real traffic destination.",
+    "first_added": "2026-07-31"
+  },
+  {
+    "value": "10.0.0.0/8",
+    "type": "cidr",
+    "category": "reserved_range",
+    "confidence": 0.05,
+    "source": "RFC 1918",
+    "note": "Private-use address space. Routine on any home/office LAN -- flagged only for classification, not as suspicious.",
+    "first_added": "2026-07-31"
+  },
+  {
+    "value": "100.64.0.0/10",
+    "type": "cidr",
+    "category": "reserved_range",
+    "confidence": 0.1,
+    "source": "RFC 6598",
+    "note": "Carrier-grade NAT shared address space. Common on ISP networks and mobile hotspots.",
+    "first_added": "2026-07-31"
+  },
+  {
+    "value": "127.0.0.0/8",
+    "type": "cidr",
+    "category": "reserved_range",
+    "confidence": 0.05,
+    "source": "RFC 1122",
+    "note": "Loopback. Should never appear as a remote traffic peer.",
+    "first_added": "2026-07-31"
+  },
+  {
+    "value": "169.254.0.0/16",
+    "type": "cidr",
+    "category": "reserved_range",
+    "confidence": 0.1,
+    "source": "RFC 3927",
+    "note": "Link-local (APIPA). Indicates a host failed DHCP, not malicious activity.",
+    "first_added": "2026-07-31"
+  },
+  {
+    "value": "172.16.0.0/12",
+    "type": "cidr",
+    "category": "reserved_range",
+    "confidence": 0.05,
+    "source": "RFC 1918",
+    "note": "Private-use address space.",
+    "first_added": "2026-07-31"
+  },
+  {
+    "value": "192.0.0.0/24",
+    "type": "cidr",
+    "category": "reserved_range",
+    "confidence": 0.1,
+    "source": "RFC 6890",
+    "note": "IETF Protocol Assignments block.",
+    "first_added": "2026-07-31"
+  },
+  {
+    "value": "192.0.2.0/24",
+    "type": "cidr",
+    "category": "reserved_range",
+    "confidence": 0.15,
+    "source": "RFC 5737",
+    "note": "TEST-NET-1, reserved for documentation. Should never be a real traffic peer.",
+    "first_added": "2026-07-31"
+  },
+  {
+    "value": "192.168.0.0/16",
+    "type": "cidr",
+    "category": "reserved_range",
+    "confidence": 0.05,
+    "source": "RFC 1918",
+    "note": "Private-use address space. The most common home-network range.",
+    "first_added": "2026-07-31"
+  },
+  {
+    "value": "198.18.0.0/15",
+    "type": "cidr",
+    "category": "reserved_range",
+    "confidence": 0.1,
+    "source": "RFC 2544",
+    "note": "Reserved for network device benchmarking.",
+    "first_added": "2026-07-31"
+  },
+  {
+    "value": "198.51.100.0/24",
+    "type": "cidr",
+    "category": "reserved_range",
+    "confidence": 0.15,
+    "source": "RFC 5737",
+    "note": "TEST-NET-2, reserved for documentation.",
+    "first_added": "2026-07-31"
+  },
+  {
+    "value": "203.0.113.0/24",
+    "type": "cidr",
+    "category": "reserved_range",
+    "confidence": 0.15,
+    "source": "RFC 5737",
+    "note": "TEST-NET-3, reserved for documentation.",
+    "first_added": "2026-07-31"
+  },
+  {
+    "value": "224.0.0.0/4",
+    "type": "cidr",
+    "category": "reserved_range",
+    "confidence": 0.05,
+    "source": "RFC 5771",
+    "note": "Multicast address space.",
+    "first_added": "2026-07-31"
+  },
+  {
+    "value": "240.0.0.0/4",
+    "type": "cidr",
+    "category": "reserved_range",
+    "confidence": 0.2,
+    "source": "RFC 1112",
+    "note": "Reserved for future use. Should never appear as a real traffic peer.",
+    "first_added": "2026-07-31"
+  },
+  {
+    "value": "3333",
+    "type": "port",
+    "category": "mining_pool_port",
+    "confidence": 0.4,
+    "source": "Stratum mining protocol convention",
+    "note": "Common default Stratum port for cryptocurrency mining pools. Also used by unrelated legitimate services -- port alone is weak evidence.",
+    "first_added": "2026-07-31"
+  },
+  {
+    "value": "4444",
+    "type": "port",
+    "category": "mining_pool_port",
+    "confidence": 0.35,
+    "source": "Stratum mining protocol convention",
+    "note": "Common Stratum pool port. Also a very common default for reverse-shell/pentest tooling (e.g. Metasploit) and some legitimate services -- weak evidence alone.",
+    "first_added": "2026-07-31"
+  },
+  {
+    "value": "5555",
+    "type": "port",
+    "category": "mining_pool_port",
+    "confidence": 0.35,
+    "source": "Stratum mining protocol convention",
+    "note": "Common Stratum pool port. Also used by Android ADB and some legitimate services.",
+    "first_added": "2026-07-31"
+  },
+  {
+    "value": "7777",
+    "type": "port",
+    "category": "mining_pool_port",
+    "confidence": 0.3,
+    "source": "Stratum mining protocol convention",
+    "note": "Occasionally used Stratum pool port. Also used by several games and legitimate services.",
+    "first_added": "2026-07-31"
+  },
+  {
+    "value": "8888",
+    "type": "port",
+    "category": "mining_pool_port",
+    "confidence": 0.3,
+    "source": "Stratum mining protocol convention",
+    "note": "Occasionally used Stratum pool port. Also a very common alt-HTTP/proxy/dev-server port.",
+    "first_added": "2026-07-31"
+  },
+  {
+    "value": "9999",
+    "type": "port",
+    "category": "mining_pool_port",
+    "confidence": 0.35,
+    "source": "Stratum mining protocol convention",
+    "note": "Common Stratum pool port.",
+    "first_added": "2026-07-31"
+  },
+  {
+    "value": "14444",
+    "type": "port",
+    "category": "mining_pool_port",
+    "confidence": 0.45,
+    "source": "Stratum mining protocol convention",
+    "note": "Monero-mining pool Stratum port seen widely (e.g. XMR pool defaults). Less commonly reused by unrelated software than the low-numbered ports above.",
+    "first_added": "2026-07-31"
+  },
+  {
+    "value": "45700",
+    "type": "port",
+    "category": "mining_pool_port",
+    "confidence": 0.45,
+    "source": "Stratum mining protocol convention",
+    "note": "Monero-mining pool Stratum port seen widely.",
+    "first_added": "2026-07-31"
+  },
+  {
+    "value": "minexmr.com",
+    "type": "domain",
+    "category": "mining_pool_domain",
+    "confidence": 0.5,
+    "source": "Publicly operated Monero mining pool (long-running, publicly advertised service)",
+    "note": "Legitimate mining pool operator. Traffic here means something on this network is mining, which may be authorized (a user's own miner) or not (cryptojacking malware) -- it does not by itself indicate compromise.",
+    "first_added": "2026-07-31"
+  },
+  {
+    "value": "supportxmr.com",
+    "type": "domain",
+    "category": "mining_pool_domain",
+    "confidence": 0.5,
+    "source": "Publicly operated Monero mining pool",
+    "note": "Legitimate mining pool operator. Same caveat as minexmr.com.",
+    "first_added": "2026-07-31"
+  },
+  {
+    "value": "nanopool.org",
+    "type": "domain",
+    "category": "mining_pool_domain",
+    "confidence": 0.5,
+    "source": "Publicly operated multi-coin mining pool",
+    "note": "Legitimate mining pool operator. Same caveat as minexmr.com.",
+    "first_added": "2026-07-31"
+  },
+  {
+    "value": "ethermine.org",
+    "type": "domain",
+    "category": "mining_pool_domain",
+    "confidence": 0.5,
+    "source": "Publicly operated mining pool",
+    "note": "Legitimate mining pool operator. Same caveat as minexmr.com.",
+    "first_added": "2026-07-31"
+  },
+  {
+    "value": "f2pool.com",
+    "type": "domain",
+    "category": "mining_pool_domain",
+    "confidence": 0.5,
+    "source": "Publicly operated multi-coin mining pool",
+    "note": "Legitimate mining pool operator. Same caveat as minexmr.com.",
+    "first_added": "2026-07-31"
+  },
+  {
+    "value": "1080",
+    "type": "port",
+    "category": "proxy_port",
+    "confidence": 0.3,
+    "source": "IANA-registered SOCKS port",
+    "note": "Standard SOCKS proxy port. Legitimate proxying (corporate VPN clients, dev tools) also uses it.",
+    "first_added": "2026-07-31"
+  },
+  {
+    "value": "3128",
+    "type": "port",
+    "category": "proxy_port",
+    "confidence": 0.25,
+    "source": "Squid proxy default configuration",
+    "note": "Common HTTP/HTTPS proxy port (Squid default). Extremely common in corporate networks -- weak evidence alone.",
+    "first_added": "2026-07-31"
+  },
+  {
+    "value": "9050",
+    "type": "port",
+    "category": "proxy_port",
+    "confidence": 0.4,
+    "source": "Tor Project documentation",
+    "note": "Default Tor SOCKS port. Locally this is normally the Tor client's *listening* port, not a remote peer's -- a remote peer on 9050 suggests contact with a Tor relay/bridge control path rather than routine Tor Browser use.",
+    "first_added": "2026-07-31"
+  },
+  {
+    "value": "9150",
+    "type": "port",
+    "category": "proxy_port",
+    "confidence": 0.35,
+    "source": "Tor Browser Bundle documentation",
+    "note": "Default Tor Browser Bundle SOCKS port (bundled, separate from a system Tor install).",
+    "first_added": "2026-07-31"
+  }
+]

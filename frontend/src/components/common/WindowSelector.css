@@ -1,0 +1,27 @@
+.window-selector {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.window-btn {
+  background: var(--surface-1);
+  color: var(--text-secondary);
+  border: none;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border-right: 1px solid var(--border);
+}
+.window-btn:last-child {
+  border-right: none;
+}
+.window-btn:hover {
+  background: var(--surface-2);
+}
+.window-btn.active {
+  background: color-mix(in srgb, var(--series-1) 20%, var(--surface-1));
+  color: var(--text-primary);
+}
