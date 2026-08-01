@@ -23,9 +23,11 @@ from .store import (
     BaselineRecord,
     delete_scheduled_before,
     get_baseline,
+    get_most_recent_scheduled_baseline,
     get_schedule,
     insert_baseline,
     list_baselines,
+    mark_schedule_error,
     mark_schedule_success,
     save_schedule,
 )
@@ -221,6 +223,14 @@ class BaselineService:
 
     def prune_scheduled(self, cutoff: str) -> int:
         return delete_scheduled_before(cutoff, self._db_path)
+
+    def latest_scheduled_id(self) -> Optional[str]:
+        latest = get_most_recent_scheduled_baseline(self._db_path)
+        return latest.id if latest is not None else None
+
+    def record_schedule_error(self, error: str) -> BaselineScheduleResponse:
+        mark_schedule_error(error, self._db_path)
+        return _schedule_response(self._db_path)
 
     def get_schedule(self) -> BaselineScheduleResponse:
         return _schedule_response(self._db_path)
