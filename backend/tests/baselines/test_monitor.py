@@ -335,3 +335,34 @@ def test_wait_recalculation_does_not_block_the_event_loop(db_path):
         await monitor.shutdown()
 
     asyncio.run(scenario())
+
+
+def test_cancelled_shutdown_drains_inflight_capture_before_reraising(db_path):
+    async def scenario() -> None:
+        monitor, _, _, _, _ = make_monitor(db_path, enabled=False)
+        started = threading.Event()
+        release = threading.Event()
+        persisted = threading.Event()
+
+        def slow_run_once(*_args, **_kwargs) -> MonitorResult:
+            started.set()
+            release.wait(1)
+            persisted.set()
+            return MonitorResult(captured=False, alerted=False)
+
+        monitor.run_once = slow_run_once
+        monitor.start()
+        assert await asyncio.to_thread(started.wait, 1)
+
+        shutdown = asyncio.create_task(monitor.shutdown())
+        await asyncio.sleep(0)
+        shutdown.cancel()
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(asyncio.shield(shutdown), 0.05)
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(shutdown, 1)
+        assert persisted.is_set() is True
+        assert monitor._task is None
+
+    asyncio.run(scenario())

@@ -114,11 +114,18 @@ class BaselineMonitor:
             return
         self._stopping = True
         self.wake()
+        cancelled = False
         try:
-            await task
+            while not task.done():
+                try:
+                    await asyncio.shield(task)
+                except asyncio.CancelledError:
+                    cancelled = True
         finally:
             self._task = None
             self._loop = None
+        if cancelled:
+            raise asyncio.CancelledError
 
     async def _run(self) -> None:
         while not self._stopping:
