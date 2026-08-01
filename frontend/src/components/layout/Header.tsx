@@ -17,6 +17,7 @@ export function Header({
   connectionState,
   theme,
   onToggleTheme,
+  onExplainNetwork,
   learningMode,
   onToggleLearningMode,
 }: {
@@ -24,6 +25,7 @@ export function Header({
   connectionState: ConnectionState;
   theme: Theme;
   onToggleTheme: () => void;
+  onExplainNetwork: () => void;
   learningMode: boolean;
   onToggleLearningMode: () => void;
 }) {
@@ -35,6 +37,13 @@ export function Header({
       <h1 className="app-header-title">{VIEW_TITLES[viewId] ?? "NetAudit"}</h1>
       <div className="app-header-actions">
         {usingMocks && <span className="mock-pill">Mock data</span>}
+        <button
+          type="button"
+          className="explain-network-toggle"
+          onClick={onExplainNetwork}
+        >
+          Explain my network
+        </button>
         {/* Lives in the header rather than in the Learn view because it
             governs the explain chips scattered across every other view --
             a professional who wants them gone should be able to say so
