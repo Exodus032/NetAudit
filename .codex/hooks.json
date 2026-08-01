@@ -1,0 +1,32 @@
+{
+  "description": "Require a visual check after UI changes.",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "apply_patch|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/.codex/hooks/ui-verification-gate.mjs\" mark",
+            "commandWindows": "powershell -NoProfile -Command \"$repo = git rev-parse --show-toplevel; node (Join-Path $repo '.codex\\hooks\\ui-verification-gate.mjs') mark\"",
+            "timeout": 5,
+            "statusMessage": "Recording UI changes for visual verification"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/.codex/hooks/ui-verification-gate.mjs\" check",
+            "commandWindows": "powershell -NoProfile -Command \"$repo = git rev-parse --show-toplevel; node (Join-Path $repo '.codex\\hooks\\ui-verification-gate.mjs') check\"",
+            "timeout": 5,
+            "statusMessage": "Checking UI verification requirement"
+          }
+        ]
+      }
+    ]
+  }
+}

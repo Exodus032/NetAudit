@@ -19,6 +19,10 @@ export function LearnHomeView({ onNavigate }: LearnHomeViewProps) {
   const { items } = usePrioritisedFindings();
 
   const lessonsDone = lessons.filter((l) => !!progressFor(l.id).completedAt).length;
+  const restartTour = () => {
+    requestTourRestart();
+    onNavigate?.("overview");
+  };
 
   return (
     <div>
@@ -56,11 +60,11 @@ export function LearnHomeView({ onNavigate }: LearnHomeViewProps) {
           <div>
             <div className="learnhome-toggle-title">Guided tour</div>
             <div className="learnhome-toggle-detail">
-              A 15-step walkthrough of the whole app, highlighting what each screen shows.
+              A short walkthrough on each monitor screen, highlighting what that screen shows.
               {isTourCompleted() ? " You've already been through it." : " You haven't finished it yet."}
             </div>
           </div>
-          <button className="learnhome-tour-btn" onClick={requestTourRestart}>
+          <button className="learnhome-tour-btn" onClick={restartTour}>
             {isTourCompleted() ? "Take it again" : "Start the tour"}
           </button>
         </div>

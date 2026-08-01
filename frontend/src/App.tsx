@@ -42,6 +42,10 @@ const VIEW_ID_ALIASES: Record<string, string> = {
   security: "posture",
 };
 
+const TOUR_VIEW_ALIASES: Record<string, string> = {
+  traffic: "traffic-log",
+};
+
 function App() {
   const [view, setView] = useState<ViewId>("overview");
   const { theme, toggleTheme } = useTheme();
@@ -83,9 +87,7 @@ function App() {
           <ActiveView onNavigate={navigate} />
         </main>
       </div>
-      {/* Mounted at app level so a tour step can point at the sidebar and
-          header, not just at whatever the current view rendered. */}
-      <GuidedTour onNavigate={navigate} />
+      <GuidedTour currentView={TOUR_VIEW_ALIASES[view] ?? view} />
     </div>
   );
 }

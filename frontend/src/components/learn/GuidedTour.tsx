@@ -2,15 +2,6 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useTour } from "../../hooks/useTour";
 import "./GuidedTour.css";
 
-const VIEW_LABELS: Record<string, string> = {
-  overview: "Overview",
-  "traffic-log": "Traffic log",
-  connections: "Connections & devices",
-  recommendations: "Recommended actions",
-  posture: "Security posture",
-  threats: "Threats",
-};
-
 function panelPosition(rect: DOMRect): CSSProperties {
   const margin = 14;
   const panelWidth = 340;
@@ -22,26 +13,14 @@ function panelPosition(rect: DOMRect): CSSProperties {
   return { position: "fixed", top, left, width: panelWidth, transform: "none" };
 }
 
-/** App-level overlay driven by GET /api/tour. Mount once, anywhere — it
- * manages its own open/closed state (auto-opens on first run, reopens on
- * requestTourRestart()) and its own localStorage completion.
- *
- * Pass `onNavigate` and the tour drives the app: each step switches to the
- * view it is about, so a student following along never has to work out
- * which sidebar link the instructions meant. Without it (or when a step's
- * target element carries no `data-tour` attribute) the panel falls back to
- * centring itself and naming the view in prose. */
-export function GuidedTour({ onNavigate }: { onNavigate?: (view: string) => void } = {}) {
-  const { step, index, total, open, next, back, skip } = useTour();
+/** App-level overlay driven by GET /api/tour. It presents only the segment
+ * belonging to the active view; later segments appear when the visitor
+ * navigates to their pages. */
+export function GuidedTour({ currentView }: { currentView: string }) {
+  const { step, index, total, open, next, back, skip } = useTour(currentView);
   const [rect, setRect] = useState<DOMRect | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
-
-  const stepView = step?.view;
-  useEffect(() => {
-    if (!open || !stepView || !onNavigate) return;
-    onNavigate(stepView);
-  }, [open, stepView, onNavigate]);
 
   useEffect(() => {
     if (open) {
@@ -142,25 +121,13 @@ export function GuidedTour({ onNavigate }: { onNavigate?: (view: string) => void
         <h3 className="tour-panel-title">{step.title}</h3>
         <p className="tour-panel-body">{step.body}</p>
 
-        {/* Two different reasons there's nothing to highlight, and telling
-            them apart matters. Without onNavigate the student is on the
-            wrong view and has to switch. With it we already switched, so
-            the element simply isn't on screen yet -- it's a drawer that
-            opens on click -- and repeating "switch to this view" would send
-            them looking for a sidebar link they're already on. */}
-        {!hasTarget && !onNavigate && (
-          <p className="tour-panel-hint">
-            This step is on the <strong>{VIEW_LABELS[step.view] ?? step.view}</strong> view. Switch to it from the sidebar,
-            then use Next.
-          </p>
-        )}
-        {!hasTarget && onNavigate && step.action_hint && (
+        {!hasTarget && step.action_hint && (
           <p className="tour-panel-hint">
             Nothing to highlight until you {step.action_hint}.
           </p>
         )}
 
-        {step.action_hint && (hasTarget || !onNavigate) && (
+        {step.action_hint && hasTarget && (
           <p className="tour-panel-action">» {step.action_hint}</p>
         )}
 
@@ -183,7 +150,7 @@ export function GuidedTour({ onNavigate }: { onNavigate?: (view: string) => void
             Back
           </button>
           <button type="button" className="tour-btn tour-btn-primary" onClick={next}>
-            {index + 1 >= total ? "Finish" : "Next"}
+            {index + 1 >= total ? "Done" : "Next"}
           </button>
         </div>
       </div>

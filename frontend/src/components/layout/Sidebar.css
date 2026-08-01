@@ -1,3 +1,6 @@
+/* Fills the shell rather than pinning itself to the viewport: the shell is
+   already exactly one viewport tall, so `position: sticky` had nothing left
+   to do and `100vh` here fought the shell's own height. */
 .sidebar {
   width: var(--nav-width);
   flex: none;
@@ -5,16 +8,18 @@
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  position: sticky;
-  top: 0;
+  height: 100%;
+  min-height: 0;
 }
 
 .sidebar-brand {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 18px 16px;
+  /* Trimmed from 18px: three section headings and eighteen links have to
+     fit a 720px-tall viewport, and the brand block is the cheapest place
+     to find the room. */
+  padding: 12px 16px;
   font-weight: 700;
   font-size: 15px;
   letter-spacing: 0.02em;
@@ -39,7 +44,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 9px 10px;
+  padding: 7px 10px;
   border-radius: var(--radius-md);
   background: transparent;
   border: none;
@@ -106,7 +111,7 @@
 
 .sidebar-section-label {
   margin: 0;
-  padding: 8px 16px 2px;
+  padding: 6px 16px 2px;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.08em;

@@ -4,11 +4,13 @@
 #
 #   .\start.ps1              normal run
 #   .\start.ps1 -Prod        build the frontend and serve it from the backend on :8787
+#   .\start.ps1 -Lan         share the production dashboard with devices on this LAN
 #   .\start.ps1 -SkipInstall skip dependency install
 
 [CmdletBinding()]
 param(
     [switch]$Prod,
+    [switch]$Lan,
     [switch]$SkipInstall
 )
 
@@ -20,6 +22,13 @@ $frontend = Join-Path $root 'frontend'
 function Write-Step($msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
 function Write-Warn($msg) { Write-Host "    ! $msg" -ForegroundColor Yellow }
 function Write-Ok($msg)   { Write-Host "    + $msg" -ForegroundColor Green }
+
+if ($Lan) {
+    # The backend serves the built SPA on one same-origin LAN port. This
+    # avoids exposing Vite's development server and keeps API/WebSocket
+    # requests on the same host as the dashboard.
+    $Prod = $true
+}
 
 # --- capability check -------------------------------------------------------
 
@@ -88,9 +97,32 @@ if ($Prod) {
 
 Write-Step 'Starting services'
 
-$backendProc = Start-Process -FilePath $py -ArgumentList '-m','netaudit.server' `
+$backendArgs = @('-m', 'netaudit.server')
+if ($Lan) {
+    $backendArgs += @('--unsafe-bind', '0.0.0.0', '--allow-lan-bootstrap')
+    if ($isAdmin) {
+        $rule = Get-NetFirewallRule -DisplayName 'NetAudit LAN dashboard' -ErrorAction SilentlyContinue
+        if (-not $rule) {
+            New-NetFirewallRule -DisplayName 'NetAudit LAN dashboard' -Direction Inbound -Action Allow `
+                -Protocol TCP -LocalPort 8787 -RemoteAddress LocalSubnet -Profile Private | Out-Null
+            Write-Ok 'Added a Private-network firewall rule for local-subnet access on port 8787'
+        }
+    } else {
+        Write-Warn 'LAN sharing needs an elevated PowerShell to add its local-subnet firewall rule.'
+    }
+}
+
+$backendProc = Start-Process -FilePath $py -ArgumentList $backendArgs `
     -WorkingDirectory $backend -PassThru
-Write-Ok "Backend pid $($backendProc.Id) -> http://127.0.0.1:8787"
+if ($Lan) {
+    $lanIp = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' -and $_.PrefixOrigin -ne 'WellKnown' } |
+        Select-Object -First 1 -ExpandProperty IPAddress
+    $lanUrl = if ($lanIp) { "http://${lanIp}:8787" } else { 'http://<this-pc-ip>:8787' }
+    Write-Ok "Backend pid $($backendProc.Id) -> $lanUrl (LAN mode)"
+} else {
+    Write-Ok "Backend pid $($backendProc.Id) -> http://127.0.0.1:8787"
+}
 
 $frontendProc = $null
 if (-not $Prod) {
@@ -100,7 +132,7 @@ if (-not $Prod) {
     Write-Ok "Frontend pid $($frontendProc.Id) -> http://localhost:5173"
 }
 
-$url = if ($Prod) { 'http://127.0.0.1:8787' } else { 'http://localhost:5173' }
+$url = if ($Lan) { $lanUrl } elseif ($Prod) { 'http://127.0.0.1:8787' } else { 'http://localhost:5173' }
 
 Write-Host "`n    waiting for the API to come up..."
 $ready = $false

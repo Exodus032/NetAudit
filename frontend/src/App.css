@@ -1,12 +1,33 @@
+/* One viewport-height shell with a single scrolling region, rather than a
+   page that grows and a sidebar pinned on top of it.
+
+   The old layout let the document scroll and gave the sidebar its own
+   nested scrollbar. On a short viewport -- a 1080p laptop at 150% Windows
+   scaling is 1280x720 CSS pixels, which is exactly what fullscreen looks
+   like there -- the eighteen nav links did not fit, so half the app's
+   navigation ended up behind an inner scrollbar most people never find,
+   next to a second scrollbar for the page. Now the content column owns
+   scrolling, the sidebar scrolls only itself and only when it genuinely
+   cannot fit, and the header stays put.
+
+   dvh over vh because on mobile browsers vh counts the URL bar's space
+   even while the bar is covering it. */
 .app-shell {
   display: flex;
-  width: 100%;
-  min-height: 100vh;
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
 }
 
 .app-main-col {
   flex: 1;
   min-width: 0;
+  /* Without min-height a flex child refuses to shrink below its content,
+     so the column would grow past the shell and take its scrollbar back. */
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
@@ -15,6 +36,8 @@
   flex: 1;
   padding: 20px 24px 40px;
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
   outline: none;
 }
 

@@ -178,6 +178,11 @@ def _parse_args(argv=None):
         default=None,
         help="Bind to HOST instead of 127.0.0.1. DANGEROUS -- exposes the API beyond this machine.",
     )
+    parser.add_argument(
+        "--allow-lan-bootstrap",
+        action="store_true",
+        help="Allow same-origin dashboard bootstrap requests from LAN clients. Requires --unsafe-bind.",
+    )
     return parser.parse_args(argv)
 
 
@@ -185,10 +190,15 @@ def main(argv=None) -> None:
     import uvicorn
 
     args = _parse_args(argv)
+    if args.allow_lan_bootstrap and not args.unsafe_bind:
+        raise SystemExit("--allow-lan-bootstrap requires --unsafe-bind.")
     host = config.HOST
     if args.unsafe_bind:
         host = args.unsafe_bind
         logger.warning(_UNSAFE_BIND_WARNING, host)
+    # Kept on app state rather than in config so the secure, loopback-only
+    # default remains unchanged for imports, tests, and normal launches.
+    app.state.allow_lan_bootstrap = args.allow_lan_bootstrap
     uvicorn.run(app, host=host, port=config.PORT, log_level="info")
 
 

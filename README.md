@@ -70,6 +70,23 @@ a banner telling you what you're missing.
 Run it from an **Administrator** PowerShell to get real packet capture. Without
 elevation it still works, on the polling tier, with reduced detail.
 
+### Share the dashboard on your LAN
+
+To open the dashboard from another device on the same trusted network, run this
+from an elevated PowerShell:
+
+```powershell
+.\start.ps1 -Lan
+```
+
+The launcher builds the dashboard, serves it on port 8787, prints its LAN URL,
+and creates a Windows Firewall rule limited to the **Private** profile and the
+local subnet. Open the printed `http://<PC-IP>:8787` address from another
+device on that network. LAN mode intentionally exposes the dashboard's audit
+data to devices that can reach that address, so use it only on a network you
+trust. Stop the launcher to end access; remove the `NetAudit LAN dashboard`
+firewall rule when you no longer want to share it.
+
 Manual:
 
 ```powershell
