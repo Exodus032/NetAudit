@@ -15,6 +15,7 @@ const LearnHomeView = lazy(() => import("./LearnHomeView").then((m) => ({ defaul
 const GlossaryView = lazy(() => import("./GlossaryView").then((m) => ({ default: m.GlossaryView })));
 const LessonsView = lazy(() => import("./LessonsView").then((m) => ({ default: m.LessonsView })));
 const FixFirstView = lazy(() => import("./FixFirstView").then((m) => ({ default: m.FixFirstView })));
+const ExplainNetworkView = lazy(() => import("./ExplainNetworkView").then((m) => ({ default: m.ExplainNetworkView })));
 
 export const LEARN_NAV_ITEMS: { id: string; label: string; icon: string }[] = [
   { id: "learn-home", label: "Learn", icon: "◎" },
@@ -42,6 +43,7 @@ export const LEARN_VIEWS: Record<string, ComponentType<LearnViewProps>> = {
   "learn-glossary": withSuspense(GlossaryView),
   "learn-lessons": withSuspense(LessonsView),
   "learn-fix-first": withSuspense(FixFirstView),
+  "learn-explain-network": withSuspense(ExplainNetworkView),
 };
 
 export { GuidedTour } from "../../components/learn/GuidedTour";

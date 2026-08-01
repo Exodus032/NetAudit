@@ -1,0 +1,103 @@
+.explain-network-view {
+  max-width: 960px;
+  margin: 0 auto;
+  color: var(--text-primary);
+}
+
+.explain-network-intro {
+  padding: 20px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.explain-network-intro h1,
+.explain-network-card h2,
+.explain-network-warning h2 {
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.explain-network-intro h1 {
+  font-size: 22px;
+}
+
+.explain-network-intro > p {
+  max-width: 72ch;
+  margin: 10px 0 0;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.explain-network-warning {
+  margin-top: 18px;
+  padding: 14px 16px;
+  background: var(--surface-2);
+  border-left: 3px solid var(--status-warning);
+  border-radius: var(--radius-md);
+}
+
+.explain-network-warning h2 {
+  font-size: 15px;
+}
+
+.explain-network-warning p {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.explain-network-chapters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.explain-network-card {
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.explain-network-card h2 {
+  font-size: 17px;
+}
+
+.explain-network-card p {
+  margin: 10px 0 0;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.explain-network-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 18px;
+}
+
+.explain-network-actions button {
+  padding: 8px 10px;
+  color: var(--text-primary);
+  font: inherit;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.explain-network-actions button:hover {
+  background: var(--surface-0);
+  border-color: var(--series-1);
+}
+
+@media (max-width: 680px) {
+  .explain-network-chapters {
+    grid-template-columns: 1fr;
+  }
+}
