@@ -7,6 +7,13 @@ configured, flags suspicious behaviour, and tells you what to do about it.
 Everything runs on localhost against your own network. Nothing is uploaded, and the
 tool makes no outbound requests of its own.
 
+## Platform support
+
+Windows 10/11 is the supported platform and is required for full packet capture and
+the Windows security-posture checks. Linux and macOS can run the dashboard and the
+connection-table **polling** tier, but their posture results and remediation advice
+are Windows-focused; packet capture with Npcap/raw sockets is unavailable there.
+
 ## What it does
 
 **Traffic statistics** — live throughput in and out, protocol breakdown, encrypted vs
@@ -63,12 +70,52 @@ a banner telling you what you're missing.
 
 ## Running
 
+### Windows
+
 ```powershell
 .\start.ps1
 ```
 
 Run it from an **Administrator** PowerShell to get real packet capture. Without
 elevation it still works, on the polling tier, with reduced detail.
+
+### Linux
+
+Requires Python 3.11+ and Node.js 20+ with npm. This starts the portable polling
+tier; it does not provide Npcap/raw-socket capture or Windows posture checks.
+
+```bash
+git clone https://github.com/Exodus032/NetAudit.git
+cd NetAudit
+python3 -m venv backend/.venv
+source backend/.venv/bin/activate
+pip install -r backend/requirements.txt
+(cd frontend && npm install && npm run build)
+(cd backend && python -m netaudit.server)
+```
+
+Open `http://127.0.0.1:8787`.
+
+### macOS
+
+Install Python 3.11+ and Node.js 20+ (for example with Homebrew), then use the same
+commands as the Linux section above. macOS runs the polling tier only; macOS firewall,
+packet-capture, and host-posture checks are not currently implemented.
+
+### Share the dashboard on Linux or macOS
+
+After building the frontend as above, start the backend only on a trusted network:
+
+```bash
+cd backend
+python -m netaudit.server --unsafe-bind 0.0.0.0 --allow-lan-bootstrap
+```
+
+Open `http://<computer-ip>:8787` from another device on that network. If the host
+firewall blocks it, allow inbound TCP port 8787 only from your local subnet. On macOS,
+you may need to allow the virtual-environment Python executable through the Application
+Firewall. Do not expose this port to the internet: LAN mode shares live audit data with
+any device that can reach it.
 
 ### Share the dashboard on your LAN
 
