@@ -108,9 +108,12 @@ def insert_baseline(
     db_path=None,
     origin: str = "manual",
     captured_at: Optional[str] = None,
+    mark_schedule_success: bool = False,
 ) -> BaselineRecord:
     if origin not in _BASELINE_ORIGINS:
         raise ValueError("origin must be 'manual' or 'scheduled'")
+    if mark_schedule_success and origin != "scheduled":
+        raise ValueError("only scheduled baselines can mark schedule success")
     conn = dbmod.get_conn(db_path)
     _ensure_schema(conn, db_path)
     record = BaselineRecord(
@@ -125,26 +128,36 @@ def insert_baseline(
         overall_score=overall_score,
         origin=origin,
     )
-    conn.execute(
-        """
+    statement = """
         INSERT INTO baselines (id, label, captured_at, checks_json, peers_json, listeners_json,
                                posture_score, threats_score, overall_score, origin)
         VALUES (:id, :label, :captured_at, :checks_json, :peers_json, :listeners_json,
                 :posture_score, :threats_score, :overall_score, :origin)
-        """,
-        {
-            "id": record.id,
-            "label": record.label,
-            "captured_at": record.captured_at,
-            "checks_json": json.dumps(record.checks),
-            "peers_json": json.dumps(record.peers),
-            "listeners_json": json.dumps(record.listeners),
-            "posture_score": record.posture_score,
-            "threats_score": record.threats_score,
-            "overall_score": record.overall_score,
-            "origin": record.origin,
-        },
-    )
+        """
+    values = {
+        "id": record.id,
+        "label": record.label,
+        "captured_at": record.captured_at,
+        "checks_json": json.dumps(record.checks),
+        "peers_json": json.dumps(record.peers),
+        "listeners_json": json.dumps(record.listeners),
+        "posture_score": record.posture_score,
+        "threats_score": record.threats_score,
+        "overall_score": record.overall_score,
+        "origin": record.origin,
+    }
+    if mark_schedule_success:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            conn.execute(statement, values)
+            _mark_schedule_success(conn, record.captured_at)
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        else:
+            conn.execute("COMMIT")
+    else:
+        conn.execute(statement, values)
     return record
 
 
@@ -223,10 +236,7 @@ def save_schedule(enabled: bool, interval_hours: int, db_path=None) -> BaselineS
     return get_schedule(db_path)
 
 
-def mark_schedule_success(captured_at: str, db_path=None) -> BaselineScheduleRecord:
-    captured_at = _canonical_timestamp(captured_at)
-    conn = dbmod.get_conn(db_path)
-    _ensure_schema(conn, db_path)
+def _mark_schedule_success(conn: sqlite3.Connection, captured_at: str) -> None:
     conn.execute(
         """
         UPDATE baseline_schedule
@@ -236,6 +246,13 @@ def mark_schedule_success(captured_at: str, db_path=None) -> BaselineScheduleRec
         """,
         (captured_at, captured_at),
     )
+
+
+def mark_schedule_success(captured_at: str, db_path=None) -> BaselineScheduleRecord:
+    captured_at = _canonical_timestamp(captured_at)
+    conn = dbmod.get_conn(db_path)
+    _ensure_schema(conn, db_path)
+    _mark_schedule_success(conn, captured_at)
     return get_schedule(db_path)
 
 

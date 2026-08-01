@@ -61,6 +61,7 @@ def capture_snapshot(
     db_path=None,
     origin: str = "manual",
     captured_at: Optional[str] = None,
+    mark_schedule_success: bool = False,
 ) -> BaselineRecord:
     checks = [{"id": str(c.get("id")), "status": str(c.get("status"))} for c in posture.checks() if "id" in c]
     peers = sorted({str(p) for p in traffic.peers()})
@@ -79,6 +80,7 @@ def capture_snapshot(
         db_path=db_path,
         origin=origin,
         captured_at=captured_at,
+        mark_schedule_success=mark_schedule_success,
     )
 
 
@@ -108,7 +110,7 @@ def get_baselines_response(db_path=None) -> BaselinesResponse:
 def _schedule_response(db_path=None) -> BaselineScheduleResponse:
     schedule = get_schedule(db_path)
     next_due_at = None
-    if schedule.last_succeeded_at is not None:
+    if schedule.enabled and schedule.last_succeeded_at is not None:
         next_due_at = iso_z(parse_iso(schedule.last_succeeded_at) + schedule.interval_hours * 3600)
     return BaselineScheduleResponse(
         enabled=schedule.enabled,
@@ -223,8 +225,8 @@ class BaselineService:
             self._db_path,
             origin="scheduled",
             captured_at=captured_at,
+            mark_schedule_success=True,
         )
-        mark_schedule_success(record.captured_at, self._db_path)
         return _record_to_list_item(record)
 
     def create_scheduled(

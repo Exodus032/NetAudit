@@ -271,3 +271,45 @@ def test_canonical_timestamps_sort_and_prune_chronologically(db_path):
         whole_second.id,
         fractional_second.id,
     }
+
+
+
+def test_disabled_schedule_has_no_next_due_at_after_successful_capture(db_path):
+    service = BaselineService(db_path)
+    service.update_schedule(enabled=True, interval_hours=6)
+    service.create_scheduled(
+        StaticPostureProvider([]),
+        StaticTrafficProvider([], []),
+        StaticScoreProvider(0, None, 0),
+        captured_at="2026-04-01T00:00:00.000Z",
+    )
+
+    disabled = service.update_schedule(enabled=False, interval_hours=6)
+
+    assert disabled.last_succeeded_at == "2026-04-01T00:00:00.000Z"
+    assert disabled.next_due_at is None
+
+
+def test_failed_schedule_watermark_rolls_back_scheduled_snapshot(db_path):
+    service = BaselineService(db_path)
+    service.get_schedule()
+    baseline_store.dbmod.get_conn(db_path).execute(
+        """
+        CREATE TRIGGER reject_schedule_success
+        BEFORE UPDATE OF last_succeeded_at ON baseline_schedule
+        BEGIN
+            SELECT RAISE(ABORT, 'reject schedule success');
+        END
+        """
+    )
+
+    with pytest.raises(sqlite3.IntegrityError, match="reject schedule success"):
+        service.create_scheduled(
+            StaticPostureProvider([]),
+            StaticTrafficProvider([], []),
+            StaticScoreProvider(0, None, 0),
+            captured_at="2026-04-01T00:00:00.000Z",
+        )
+
+    assert BaselineService(db_path).list().baselines == []
+    assert BaselineService(db_path).get_schedule().last_succeeded_at is None
