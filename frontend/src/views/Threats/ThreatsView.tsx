@@ -74,9 +74,13 @@ export function ThreatsView() {
           />
         )}
 
-        {threats.map((t) => (
-          <ThreatRow key={t.id} threat={t} onAcknowledge={acknowledge} onUnacknowledge={unacknowledge} />
-        ))}
+        {threats.length > 0 && (
+          <div data-tour="threats-list">
+            {threats.map((t, i) => (
+              <ThreatRow key={t.id} threat={t} onAcknowledge={acknowledge} onUnacknowledge={unacknowledge} isFirst={i === 0} />
+            ))}
+          </div>
+        )}
       </section>
     </div>
   );

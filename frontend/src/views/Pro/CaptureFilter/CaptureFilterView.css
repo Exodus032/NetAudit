@@ -1,0 +1,77 @@
+.capfilter-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.capfilter-status-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.capfilter-status-pill {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  background: var(--surface-2);
+}
+.capfilter-status-pill.active {
+  color: var(--status-good);
+  border-color: color-mix(in srgb, var(--status-good) 45%, var(--border));
+  background: color-mix(in srgb, var(--status-good) 12%, var(--surface-2));
+}
+
+.capfilter-textarea {
+  resize: vertical;
+  min-height: 44px;
+  width: 100%;
+  font-size: 13px;
+}
+
+.capfilter-caret-row {
+  white-space: pre;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1;
+  color: var(--status-critical);
+  margin-top: 2px;
+}
+.capfilter-caret-pad {
+  visibility: hidden;
+}
+
+.capfilter-applied {
+  color: var(--status-good);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.capfilter-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.capfilter-examples {
+  gap: 6px;
+}
+.capfilter-example-btn {
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+}
+.capfilter-example-btn:hover {
+  background: var(--surface-2);
+}
+
+.capfilter-footnote {
+  margin-top: 10px;
+}

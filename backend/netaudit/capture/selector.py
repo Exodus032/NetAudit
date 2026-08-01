@@ -35,9 +35,16 @@ def select_tier(prefer_npcap_probe=None, prefer_rawsocket_probe=None) -> TierSel
             backend=PollingBackend(),
             mode="polling",
             elevated=False,
+            # Names the two consequences a user will actually notice, rather
+            # than only the tier name. The blank process column is the one
+            # that gets read as a bug: without elevation Windows will not
+            # name the owner of a socket belonging to another account, so
+            # most rows are honestly unattributed rather than wrong.
             degraded_reason=(
-                "Not running as Administrator; using connection-table polling "
-                "(no per-packet detail). Restart as Administrator for full capture."
+                "Not running as Administrator; using connection-table polling. "
+                "Traffic is sampled from the connection table rather than read "
+                "per packet, and most connections cannot be attributed to a "
+                "process. Restart as Administrator for full capture."
             ),
         )
 

@@ -1,5 +1,6 @@
 import { Drawer } from "../../components/common/Drawer";
 import { RiskBadge } from "../../components/common/Badge";
+import { ExplainChip } from "../../components/learn/ExplainChip";
 import type { TrafficLogEntry } from "../../api/types";
 import { formatBytes, formatDateTime } from "../../lib/format";
 import "./LogDetailDrawer.css";
@@ -8,7 +9,7 @@ export function LogDetailDrawer({ entry, onClose }: { entry: TrafficLogEntry | n
   return (
     <Drawer open={entry !== null} onClose={onClose} title={entry ? `Packet #${entry.id}` : "Detail"}>
       {entry && (
-        <div className="log-detail">
+        <div className="log-detail" data-tour="traffic-log-row-detail">
           <div className="log-detail-summary">{entry.summary}</div>
           <dl className="log-detail-grid">
             <dt>Time</dt>
@@ -33,7 +34,10 @@ export function LogDetailDrawer({ entry, onClose }: { entry: TrafficLogEntry | n
             <dd>{entry.is_external ? "Yes" : "No (local network)"}</dd>
             <dt>Encrypted</dt>
             <dd>{entry.is_encrypted ? "Yes" : "No"}</dd>
-            <dt>Risk</dt>
+            <dt>
+              Risk
+              <ExplainChip kind="metric" id="risk" label="Risk" />
+            </dt>
             <dd><RiskBadge risk={entry.risk} /></dd>
           </dl>
         </div>

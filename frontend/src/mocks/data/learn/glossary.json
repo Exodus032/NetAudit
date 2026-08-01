@@ -1,0 +1,721 @@
+{
+  "terms": [
+    {
+      "id": "ip_address",
+      "term": "IP address",
+      "expansion": "Internet Protocol address",
+      "short": "The numeric address that identifies a device on a network, like a postal address for packets.",
+      "detail": "Every device that sends or receives network traffic needs one. IPv4 addresses look like 192.168.1.42; IPv6 addresses are longer and written in hex groups. Two devices on the same network segment can talk directly; otherwise a router forwards the traffic.",
+      "why_it_matters": "It is how NetAudit tells devices apart in the traffic log and device list. An address alone does not prove who is behind it: it can be shared (behind NAT), reassigned (DHCP), or spoofed.",
+      "see_also": [
+        "mac_address",
+        "subnet",
+        "nat",
+        "gateway"
+      ],
+      "category": "networking",
+      "difficulty": "beginner"
+    },
+    {
+      "id": "mac_address",
+      "term": "MAC address",
+      "expansion": "Media Access Control address",
+      "short": "The hardware address burned into (or assigned to) a network interface, used for delivery on the local segment.",
+      "detail": "A MAC address is six bytes, usually written as pairs of hex digits (e.g. 3C:22:FB:AA:11:02). Unlike an IP address, it is not used to route traffic across networks -- it only matters for the last hop, from one device to the next one directly reachable on the same wire or Wi-Fi cell. ARP is the protocol that maps an IP address to the MAC address that currently owns it.",
+      "why_it_matters": "Devices and detectors use it as a stronger (if still spoofable) identity signal than an IP address, which can move between devices. Spoofing detectors like arp_spoofing and mac_flapping exist specifically because this mapping can be lied about.",
+      "see_also": [
+        "arp",
+        "arp_spoofing",
+        "ip_address"
+      ],
+      "category": "networking",
+      "difficulty": "beginner"
+    },
+    {
+      "id": "port",
+      "term": "Port",
+      "expansion": null,
+      "short": "A number (0-65535) that identifies which application or service on a device a piece of traffic is meant for.",
+      "detail": "An IP address gets a packet to the right device; the port number gets it to the right program on that device. Well-known ports are conventional, not enforced: 80 usually means HTTP, 443 usually means HTTPS, 22 usually means SSH, but nothing stops software from using a different one.",
+      "why_it_matters": "Firewalls, port scans, and posture checks like high_risk_ports_open all operate at the level of ports: which ones are open, which are reachable from where, and whether the service actually running there matches what the port number implies.",
+      "see_also": [
+        "tcp",
+        "udp",
+        "port_scan",
+        "firewall"
+      ],
+      "category": "networking",
+      "difficulty": "beginner"
+    },
+    {
+      "id": "tcp",
+      "term": "TCP",
+      "expansion": "Transmission Control Protocol",
+      "short": "A connection-oriented transport protocol that guarantees data arrives complete, in order, and without duplicates.",
+      "detail": "Before any data flows, TCP performs a three-way handshake (SYN, SYN-ACK, ACK) to set up the connection, then acknowledges every segment and retransmits anything lost. This reliability costs a little overhead and latency, which is why protocols that can tolerate loss (video calls, DNS, gaming) often use UDP instead. Most web traffic, file transfer, and remote access (HTTP/HTTPS, SSH, RDP, SMB) runs over TCP.",
+      "why_it_matters": "Several detectors (protocol_anomaly, port_scan_outbound/inbound) look specifically at TCP's flag bits and connection patterns, because a malformed or unusual flag combination (SYN+FIN together, for example) has no legitimate reason to occur and is a reliable signal of crafted, non-standard traffic.",
+      "see_also": [
+        "udp",
+        "packet",
+        "flow",
+        "port"
+      ],
+      "category": "protocol",
+      "difficulty": "beginner"
+    },
+    {
+      "id": "udp",
+      "term": "UDP",
+      "expansion": "User Datagram Protocol",
+      "short": "A connectionless transport protocol that sends data with no handshake, no ordering guarantee, and no automatic retransmission.",
+      "detail": "UDP just fires packets ('datagrams') at the destination and moves on -- if one is lost, dropped, or arrives out of order, UDP itself does nothing about it; it is up to the application to notice and cope, or not bother. That lack of overhead makes it the right choice for DNS lookups, streaming media, VoIP, and online games, where a late retransmit is often worse than a small gap.",
+      "why_it_matters": "DNS (port 53), DHCP (67/68), and NTP (123) all run over UDP, which is why several detectors and rules key off UDP port numbers specifically.",
+      "see_also": [
+        "tcp",
+        "dns",
+        "dhcp",
+        "port"
+      ],
+      "category": "protocol",
+      "difficulty": "beginner"
+    },
+    {
+      "id": "icmp",
+      "term": "ICMP",
+      "expansion": "Internet Control Message Protocol",
+      "short": "The protocol routers and hosts use to report network-layer problems and diagnostics, not to carry application data.",
+      "detail": "ICMP messages include 'echo request/reply' (what the `ping` command actually sends), 'destination unreachable', and 'time exceeded' (what `traceroute` relies on). It has no ports and no payload in the TCP/UDP sense -- it is a signalling protocol that sits alongside IP, not on top of a transport protocol.",
+      "why_it_matters": "A flood of ICMP traffic, or ICMP appearing where nothing should be pinging, can be a diagnostic signal in its own right, separate from the TCP/UDP traffic most detectors focus on.",
+      "see_also": [
+        "ip_address",
+        "packet"
+      ],
+      "category": "protocol",
+      "difficulty": "beginner"
+    },
+    {
+      "id": "dns",
+      "term": "DNS",
+      "expansion": "Domain Name System",
+      "short": "The system that translates human-readable names (example.com) into the IP addresses computers actually use to connect.",
+      "detail": "A DNS lookup is normally a single UDP request/response pair to a configured resolver (port 53), asking 'what is the address for this name?'. DNS has no encryption or authentication by default, so both the query and the answer are visible -- and forgeable -- to anyone on the path, which is what DNS-over-HTTPS/TLS exists to fix.",
+      "why_it_matters": "NetAudit's capture layer records that a DNS-shaped conversation happened (peer, port, byte counts) but does not currently parse the query name or answer out of the payload -- see dns_tunneling and dga_domains for what that limitation means in practice.",
+      "see_also": [
+        "dns_tunneling",
+        "dga",
+        "plaintext",
+        "gateway"
+      ],
+      "category": "protocol",
+      "difficulty": "beginner"
+    },
+    {
+      "id": "dhcp",
+      "term": "DHCP",
+      "expansion": "Dynamic Host Configuration Protocol",
+      "short": "The protocol a device uses to automatically request an IP address and network settings when it joins a network.",
+      "detail": "A new device broadcasts a DHCP discover; a DHCP server (usually the router) offers an address, a subnet, a gateway, and DNS servers, and the device accepts. Because the request is a broadcast with no built-in authentication of the server, anything on the segment can answer -- a second, rogue DHCP server can hand out its own gateway/DNS and put itself in the middle of that device's traffic.",
+      "why_it_matters": "The rogue_dhcp detector exists specifically for this scenario, though on this tool it currently cannot fire: see the detector's own explanation for why.",
+      "see_also": [
+        "gateway",
+        "subnet",
+        "dns"
+      ],
+      "category": "protocol",
+      "difficulty": "beginner"
+    },
+    {
+      "id": "arp",
+      "term": "ARP",
+      "expansion": "Address Resolution Protocol",
+      "short": "How a device finds the hardware (MAC) address that belongs to an IP address on the local network.",
+      "detail": "Devices on the same network segment talk to each other using MAC addresses, not IPs. ARP is the shout-and-answer protocol that maps one to the other: 'who has 192.168.1.1?', 'I do, here is my MAC.' It has no authentication at all, which is why ARP spoofing works: nothing stops any device from answering for an address it doesn't own.",
+      "why_it_matters": "If something can lie about ARP, it can silently sit between you and your router and read or alter everything you send -- the classic local-network man-in-the-middle.",
+      "see_also": [
+        "mac_address",
+        "arp_spoofing",
+        "gateway"
+      ],
+      "category": "protocol",
+      "difficulty": "beginner"
+    },
+    {
+      "id": "gateway",
+      "term": "Gateway",
+      "expansion": null,
+      "short": "The router a device sends traffic to whenever the destination is outside its own local network.",
+      "detail": "Every device's network configuration includes a default gateway address. Traffic to another device on the same subnet goes there directly; everything else (which, for most home/office setups, is almost all internet traffic) goes to the gateway first, which forwards it onward. The gateway is usually also the DHCP server and DNS forwarder.",
+      "why_it_matters": "Because the gateway sees nearly all of a device's outbound traffic, it is one of the highest-value targets for ARP spoofing: if an attacker's MAC address gets accepted as the gateway's, every outbound packet routes through the attacker first.",
+      "see_also": [
+        "arp",
+        "arp_spoofing",
+        "subnet",
+        "nat"
+      ],
+      "category": "networking",
+      "difficulty": "beginner"
+    },
+    {
+      "id": "subnet",
+      "term": "Subnet",
+      "expansion": null,
+      "short": "A logical grouping of IP addresses that can all reach each other directly, without going through a router.",
+      "detail": "Written in CIDR notation like 192.168.1.0/24 -- the /24 says the first 24 bits are the fixed network portion, leaving the last 8 bits (256 addresses) for individual devices. Two devices in the same subnet exchange traffic directly over the local link (ARP-resolved MAC to MAC); devices in different subnets need a gateway/router in between.",
+      "why_it_matters": "Scope boundaries in this tool are subnet-aware for a reason: the active LAN scan (Part E) is restricted to a private subnet this machine actually has an interface on, precisely so it cannot be pointed at arbitrary internet ranges.",
+      "see_also": [
+        "ip_address",
+        "gateway",
+        "nat"
+      ],
+      "category": "networking",
+      "difficulty": "beginner"
+    },
+    {
+      "id": "nat",
+      "term": "NAT",
+      "expansion": "Network Address Translation",
+      "short": "A technique that lets many devices behind one router share a single public IP address for internet-facing traffic.",
+      "detail": "Your router rewrites the source address (and port) on outbound packets from every device on your LAN to its own public address, then reverses the rewrite on the way back using a translation table it keeps. From the internet's point of view, an entire household or office looks like one address. NAT is not itself encryption or a firewall, but it does mean nothing on the internet can address a device behind it directly unless the router is explicitly configured to forward a port.",
+      "why_it_matters": "This is why traffic to a private (RFC1918) address like 192.168.x.x never appears as an external peer in NetAudit's stats, and why the active LAN scan (Part E) is restricted to the private subnet side of that boundary.",
+      "see_also": [
+        "ip_address",
+        "subnet",
+        "gateway"
+      ],
+      "category": "networking",
+      "difficulty": "intermediate"
+    },
+    {
+      "id": "packet",
+      "term": "Packet",
+      "expansion": null,
+      "short": "The basic unit of data sent over a network: a chunk of bytes with header fields (addresses, ports, flags) in front of whatever payload it carries.",
+      "detail": "A packet is what actually travels the wire or the air; a single file transfer or web page load is broken into many packets, each independently addressed and routed, then reassembled at the far end. NetAudit's capture layer works at exactly this level on the npcap/rawsocket tiers.",
+      "why_it_matters": "The header fields are what most detectors read: source/destination address and port, protocol, TCP flags, length -- almost never the payload itself, which is why so many explanations in this tool describe measuring shape and timing rather than content.",
+      "see_also": [
+        "flow",
+        "tcp",
+        "udp",
+        "pcap"
+      ],
+      "category": "networking",
+      "difficulty": "beginner"
+    },
+    {
+      "id": "flow",
+      "term": "Flow",
+      "expansion": null,
+      "short": "A logical grouping of packets that belong to the same conversation between two endpoints.",
+      "detail": "A flow is usually identified by the 'five-tuple': source address, source port, destination address, destination port, and protocol. Every packet matching that same combination (in either direction) belongs to the same flow. NetAudit's traffic statistics, top-talkers, and most detectors operate on flows rather than individual packets, because a flow is what a human actually thinks of as 'one conversation'.",
+      "why_it_matters": "On the polling capture tier, flows (not individual packets) are effectively all the tool has: byte-count deltas sampled from the OS connection table, without per-packet timing.",
+      "see_also": [
+        "packet",
+        "port",
+        "bandwidth"
+      ],
+      "category": "networking",
+      "difficulty": "beginner"
+    },
+    {
+      "id": "bandwidth",
+      "term": "Bandwidth",
+      "expansion": null,
+      "short": "How much data moves over the network in a given time -- capacity when talking about a link, throughput when talking about what actually happened.",
+      "detail": "Usually measured in bits or bytes per second. NetAudit reports observed throughput (what actually moved), not the theoretical capacity of your connection, which it has no way to measure directly.",
+      "why_it_matters": "A sudden, sustained spike in one process's or peer's bandwidth is one of the signals behind rules like heavy_talker and detectors like data_exfiltration -- not because volume alone is proof of anything, but because it is a cheap, honest first filter before looking closer.",
+      "see_also": [
+        "flow",
+        "latency"
+      ],
+      "category": "networking",
+      "difficulty": "beginner"
+    },
+    {
+      "id": "latency",
+      "term": "Latency",
+      "expansion": null,
+      "short": "The time it takes a packet to travel from source to destination (or there and back again, for a round trip).",
+      "detail": "Usually measured in milliseconds. Latency is mostly a function of physical distance and the number of hops in between, not bandwidth -- a link can have plenty of bandwidth and still feel slow if latency is high, which is why video calls suffer on high-latency links even when the bandwidth graph looks fine.",
+      "why_it_matters": "NetAudit reports latency as an observational statistic, not a control it can change; it matters here mainly as context for interpreting timing-based detectors, which look at gaps between contacts, not one-way delay.",
+      "see_also": [
+        "bandwidth",
+        "packet"
+      ],
+      "category": "networking",
+      "difficulty": "beginner"
+    },
+    {
+      "id": "tls",
+      "term": "TLS",
+      "expansion": "Transport Layer Security",
+      "short": "The cryptographic protocol that encrypts and authenticates a connection between two endpoints -- the successor to SSL.",
+      "detail": "A TLS handshake negotiates a protocol version and cipher suite, authenticates the server (usually) via its certificate, and derives a shared key used to encrypt everything that follows. HTTPS is HTTP running inside a TLS connection. Older versions (SSL 3.0, TLS 1.0/1.1) have known weaknesses and are considered deprecated.",
+      "why_it_matters": "NetAudit's capture layer does not currently parse the TLS handshake (ClientHello) itself, so version, JA3 fingerprint, and certificate details are not populated from live traffic -- suspicious_tls and the tls10_11_disabled/ssl3_disabled posture checks work from different data sources (the local SCHANNEL configuration, not the wire) precisely because of this.",
+      "see_also": [
+        "https",
+        "certificate",
+        "encryption",
+        "mitm"
+      ],
+      "category": "protocol",
+      "difficulty": "beginner"
+    },
+    {
+      "id": "https",
+      "term": "HTTPS",
+      "expansion": "HTTP Secure",
+      "short": "Ordinary web traffic (HTTP) carried inside a TLS-encrypted connection, so the request, response, and headers are all protected in transit.",
+      "detail": "From the outside, an observer can see that a device is talking to a particular server on port 443 and roughly how much data moved, but not the URL path, page contents, or form data -- TLS hides all of that. This is the encrypted half of the 'encrypted vs plaintext' split NetAudit reports.",
+      "why_it_matters": "The plaintext_http rule exists because the same content served without the 's' (over port 80, unencrypted) has none of these protections: anyone on the path can read or alter it.",
+      "see_also": [
+        "tls",
+        "encryption",
+        "plaintext"
+      ],
+      "category": "protocol",
+      "difficulty": "beginner"
+    },
+    {
+      "id": "certificate",
+      "term": "Certificate",
+      "expansion": "X.509 certificate",
+      "short": "A digitally signed document that binds a public key to an identity (typically a domain name), used to authenticate a TLS server.",
+      "detail": "A certificate is normally signed by a Certificate Authority (CA) that your operating system or browser already trusts, forming a chain of trust back to a trusted root. A self-signed certificate skips that chain entirely -- it vouches for itself, which is fine for a device you configured yourself but is exactly what an attacker impersonating a real site would also produce.",
+      "why_it_matters": "The certificate_store_anomalies posture check looks at expired root certificates in the local Trusted Root store, not at certificates seen on the wire (which NetAudit does not currently parse); suspicious_tls is the detector that would flag a self-signed or expired certificate on live traffic, when TLS handshake parsing exists to feed it.",
+      "see_also": [
+        "tls",
+        "https",
+        "encryption"
+      ],
+      "category": "security",
+      "difficulty": "intermediate"
+    },
+    {
+      "id": "encryption",
+      "term": "Encryption",
+      "expansion": null,
+      "short": "Transforming data with a cryptographic key so that only someone holding the right key can turn it back into readable form.",
+      "detail": "Modern encryption (as used by TLS, VPNs, and disk encryption like BitLocker) is considered practically unbreakable by brute force with current computing power when implemented correctly -- the actual risk is almost always a weak/legacy protocol, a misconfiguration, or a key that leaked, not the mathematics itself.",
+      "why_it_matters": "Encrypted traffic can still be observed at the metadata level (who, how much, when) -- what NetAudit calls the 'encrypted vs plaintext' split is really 'is the content readable', not 'is this traffic invisible'.",
+      "see_also": [
+        "plaintext",
+        "tls",
+        "certificate"
+      ],
+      "category": "security",
+      "difficulty": "beginner"
+    },
+    {
+      "id": "plaintext",
+      "term": "Plaintext",
+      "expansion": null,
+      "short": "Data sent or stored without encryption -- readable in full by anyone who can see it in transit or at rest.",
+      "detail": "Plaintext is not inherently malicious (plenty of non-sensitive data has no reason to be encrypted), but any credential, password, or sensitive content sent in the clear can be read, logged, or altered by anyone positioned on the network path -- your ISP, a shared Wi-Fi network, a compromised router, or an attacker running ARP spoofing.",
+      "why_it_matters": "The plaintext_http/plaintext_dns rules and the credentials_plaintext detector all exist to surface exactly this: content that has no protection at all, not because encryption is mandatory everywhere, but because the risk needs to be visible to be a choice.",
+      "see_also": [
+        "encryption",
+        "https",
+        "mitm"
+      ],
+      "category": "security",
+      "difficulty": "beginner"
+    },
+    {
+      "id": "vpn",
+      "term": "VPN",
+      "expansion": "Virtual Private Network",
+      "short": "An encrypted tunnel between this device and a remote endpoint, through which some or all of its traffic is routed.",
+      "detail": "Everything inside the tunnel is encrypted and unreadable to anyone on the local network path (including a proxy or a spoofed gateway) -- it only becomes visible again once it exits the tunnel at the VPN provider's end. A VPN changes who can see your traffic and what your traffic appears to originate from; it does not make the destination service itself more secure.",
+      "why_it_matters": "On this tool, VPN traffic typically shows up as a single sustained encrypted flow to one peer, which can itself look unusual (heavy_talker, many_peers) purely because of how much of a device's activity funnels through it.",
+      "see_also": [
+        "encryption",
+        "proxy",
+        "tor"
+      ],
+      "category": "networking",
+      "difficulty": "beginner"
+    },
+    {
+      "id": "proxy",
+      "term": "Proxy",
+      "expansion": null,
+      "short": "An intermediary server that forwards requests on a device's behalf, sitting between it and the destination it is actually trying to reach.",
+      "detail": "A proxy can be configured deliberately (a corporate web proxy, a privacy proxy) or handed to a device automatically via WPAD. Because a proxy sits in the path, it can see and, for unencrypted (plaintext) traffic, modify everything passing through it -- which is exactly the risk WPAD spoofing and rogue proxies exploit.",
+      "why_it_matters": "The tor_or_proxy detector and the wpad_disabled posture check both address different sides of the same concern: an intentional privacy proxy is a tool you chose; an unrequested one is a man-in-the-middle.",
+      "see_also": [
+        "wpad",
+        "mitm",
+        "vpn"
+      ],
+      "category": "networking",
+      "difficulty": "intermediate"
+    },
+    {
+      "id": "tor",
+      "term": "Tor",
+      "expansion": "The Onion Router",
+      "short": "An overlay network that routes traffic through several volunteer-run relays with layered ('onion') encryption, so no single relay knows both who you are and what you're visiting.",
+      "detail": "Tor is a legitimate privacy tool used by journalists, researchers, and privacy-conscious users, as well as (like any anonymity tool) sometimes by people hiding malicious traffic. NetAudit does not bundle a Tor exit-node list (they rotate too fast to ship statically), so the tor_or_proxy detector can only recognise Tor's default SOCKS ports, not confirm that traffic is actually Tor by its destination.",
+      "why_it_matters": "A hit from tor_or_proxy tells you traffic went to a Tor/SOCKS-shaped port, not that it is confirmed Tor traffic or that it is malicious -- both legitimate Tor Browser use and unrelated software sharing that port produce the same signal.",
+      "see_also": [
+        "proxy",
+        "mitm"
+      ],
+      "category": "tool",
+      "difficulty": "intermediate"
+    },
+    {
+      "id": "firewall",
+      "term": "Firewall",
+      "expansion": null,
+      "short": "A rule-based filter that allows or blocks network traffic based on criteria like direction, address, port, and protocol.",
+      "detail": "Windows Firewall evaluates every connection attempt against its rule set and a default action (allow or block) for whatever no rule explicitly matches. A default-allow posture only protects you from traffic you remembered to block; a default-block posture only exposes what you explicitly allowed -- the difference the firewall_inbound_default_block check exists to catch.",
+      "why_it_matters": "A firewall is a perimeter control, not a content inspector: once a connection is allowed through, the firewall has no opinion on whether the data inside it is encrypted, or from a device you trust.",
+      "see_also": [
+        "port",
+        "port_scan"
+      ],
+      "category": "security",
+      "difficulty": "beginner"
+    },
+    {
+      "id": "port_scan",
+      "term": "Port scan",
+      "expansion": null,
+      "short": "Systematically probing a range of ports (on one host, or one port across many hosts) to discover what is open and listening.",
+      "detail": "A port scan can be entirely legitimate (a vulnerability scanner you run yourself, network inventory tooling) or reconnaissance ahead of an attack -- the pattern looks identical from the network's point of view; only context (did you run it, do you recognise the source) tells them apart.",
+      "why_it_matters": "port_scan_outbound looks at this host touching many ports on one peer; port_scan_inbound looks at one peer touching many ports on this host; host_sweep looks at one peer touching many hosts on the subnet -- three angles on the same underlying behaviour.",
+      "see_also": [
+        "firewall",
+        "port"
+      ],
+      "category": "security",
+      "difficulty": "beginner"
+    },
+    {
+      "id": "beaconing",
+      "term": "Beaconing",
+      "expansion": null,
+      "short": "A device or process 'checking in' with a remote peer on a regular, machine-like schedule -- exactly, or almost exactly, every N seconds.",
+      "detail": "People browsing, streaming, or chatting produce irregular timing because human activity is irregular; a program executing a timer loop does not. Beaconing detectors measure how little that timing varies (the coefficient of variation of the gaps between contacts), not the existence of repeated contact by itself.",
+      "why_it_matters": "Regularity alone is common and mostly benign: software update checkers, telemetry agents, and keepalive-polling chat/mail clients all beacon. It is one input among several, not proof of anything on its own.",
+      "see_also": [
+        "c2",
+        "baseline"
+      ],
+      "category": "security",
+      "difficulty": "intermediate"
+    },
+    {
+      "id": "c2",
+      "term": "C2",
+      "expansion": "Command and Control",
+      "short": "The infrastructure and channel malware uses to receive instructions from, and send stolen data or status back to, an attacker.",
+      "detail": "Once malware is running on a device, it typically needs to 'phone home' periodically to ask what to do next -- that periodic contact is what beaconing detection is built to notice. C2 channels are deliberately designed to look like ordinary traffic (HTTPS to a normal-looking domain, DNS queries, even social media APIs) specifically to blend in.",
+      "why_it_matters": "MITRE ATT&CK's Command and Control tactic (TA0011) catalogues the many real-world techniques malware uses for this, which is why detector explanations in this tool cite specific technique ids under that tactic.",
+      "see_also": [
+        "beaconing",
+        "mitre_attack",
+        "exfiltration"
+      ],
+      "category": "security",
+      "difficulty": "intermediate"
+    },
+    {
+      "id": "exfiltration",
+      "term": "Exfiltration",
+      "expansion": null,
+      "short": "Moving data out of a network to a destination the attacker controls, usually the objective of a breach rather than a step along the way.",
+      "detail": "Exfiltration can be fast and obvious (a huge one-off transfer) or slow and deliberately quiet (small amounts trickled out over a long period, or hidden inside a protocol like DNS that is rarely blocked). Detectors here take both angles: data_exfiltration compares volume against a learned baseline for that process/peer, while dns_exfil_volume and dns_tunneling look specifically at DNS as a smuggling channel.",
+      "why_it_matters": "Volume-based detection always risks flagging entirely legitimate large transfers -- backups, cloud sync, a big download the user started themselves -- which is why every exfiltration-related detector in this catalogue documents that exact false-positive class.",
+      "see_also": [
+        "c2",
+        "baseline",
+        "dns_tunneling"
+      ],
+      "category": "security",
+      "difficulty": "intermediate"
+    },
+    {
+      "id": "lateral_movement",
+      "term": "Lateral movement",
+      "expansion": null,
+      "short": "After gaining a foothold on one host, an attacker moving to other hosts within the same network, usually via legitimate administrative protocols and stolen or guessed credentials.",
+      "detail": "Lateral movement typically rides on protocols that are already trusted and normal on an internal network -- SMB, RDP, WinRM -- which is what makes it hard to tell apart from an IT administrator doing routine work with the exact same tools.",
+      "why_it_matters": "lateral_smb_rdp looks for one host reaching many internal hosts over these protocols in a short window: legitimate for a domain controller or a deployment tool, and also exactly what an attacker moving through a network looks like.",
+      "see_also": [
+        "smb",
+        "rdp",
+        "c2"
+      ],
+      "category": "security",
+      "difficulty": "intermediate"
+    },
+    {
+      "id": "arp_spoofing",
+      "term": "ARP spoofing",
+      "expansion": null,
+      "short": "Sending forged ARP replies that falsely claim an IP address belongs to your MAC address, so traffic meant for that IP arrives at you instead.",
+      "detail": "Because ARP has no authentication, any device on the local segment can claim to be any other IP address on that segment -- most commonly the gateway, so all of a victim's outbound traffic routes through the attacker first, who can read, log, or alter it before forwarding it on (or not).",
+      "why_it_matters": "The arp_spoofing detector looks for one MAC address claiming multiple IPs, and separately (more severely) for the gateway's IP suddenly resolving to a different MAC than before -- though hypervisors, NAT/failover routers, and a genuine router replacement can produce the same signal legitimately.",
+      "see_also": [
+        "arp",
+        "mac_address",
+        "mitm",
+        "gateway"
+      ],
+      "category": "security",
+      "difficulty": "intermediate"
+    },
+    {
+      "id": "mitm",
+      "term": "MITM",
+      "expansion": "Man-in-the-middle",
+      "short": "An attacker positioned in the path of a conversation between two parties, able to observe and potentially alter traffic that both sides believe is going directly to each other.",
+      "detail": "ARP spoofing, a rogue DHCP server, WPAD spoofing, and a malicious proxy are all ways to get into this position on a local network; once there, any unencrypted (plaintext) traffic can be read or changed freely, and even encrypted traffic can sometimes be downgraded or have its metadata observed.",
+      "why_it_matters": "TLS/HTTPS is the main defence against a MITM actually reading content, which is why so much of this tool's hygiene advice (plaintext_http, plaintext_dns) is really about closing off what a successful MITM could still read.",
+      "see_also": [
+        "arp_spoofing",
+        "wpad",
+        "tls"
+      ],
+      "category": "security",
+      "difficulty": "intermediate"
+    },
+    {
+      "id": "dns_tunneling",
+      "term": "DNS tunneling",
+      "expansion": null,
+      "short": "Encoding arbitrary data inside DNS queries and responses to smuggle a communication channel past network controls that block other protocols.",
+      "detail": "DNS is one of the few protocols almost never blocked outbound, since blocking it breaks all name resolution -- which makes it an attractive channel for C2 or slow exfiltration once other protocols are locked down. The giveaways are queries that look nothing like normal domain lookups: unusually high volume to one parent domain, long or high-entropy subdomains, or heavy use of TXT/NULL record types that normal browsing rarely produces.",
+      "why_it_matters": "On this tool, dns_tunneling needs the actual query name, label entropy, and record type from the DNS payload -- none of which the capture layer currently parses out of live traffic, so this detector is fully implemented and unit-tested but will not fire on real traffic until a DNS payload parser exists.",
+      "see_also": [
+        "dns",
+        "dga",
+        "exfiltration",
+        "c2"
+      ],
+      "category": "security",
+      "difficulty": "advanced"
+    },
+    {
+      "id": "dga",
+      "term": "DGA",
+      "expansion": "Domain Generation Algorithm",
+      "short": "An algorithm malware uses to generate a large number of candidate domain names on a schedule, so a static blocklist of known-bad domains can never keep up.",
+      "detail": "The attacker only needs to register one of the many domains the algorithm will produce on a given day; the malware tries them in sequence until one resolves. DGA domain names tend to look distinctly unlike normal ones: high entropy, unusually long, and consonant-heavy in a way that is hard to pronounce.",
+      "why_it_matters": "Like dns_tunneling, dga_domains needs the actual queried domain name from the DNS payload to evaluate, which this tool's capture layer does not currently parse from live traffic -- fully tested against synthetic data, inert on real traffic today.",
+      "see_also": [
+        "dns",
+        "dns_tunneling",
+        "c2"
+      ],
+      "category": "security",
+      "difficulty": "advanced"
+    },
+    {
+      "id": "smb",
+      "term": "SMB",
+      "expansion": "Server Message Block",
+      "short": "The protocol Windows uses for file sharing, printer sharing, and some remote administration over the network.",
+      "detail": "SMB has gone through several versions; SMBv1 (the original) has serious, well-publicised flaws and was the vector for the WannaCry and NotPetya ransomware outbreaks via the EternalBlue exploit. Modern SMB supports message signing, which prevents an on-path attacker from tampering with or replaying a session.",
+      "why_it_matters": "Several posture checks (smb1_disabled, smb_signing_required, smb_guest_auth_disabled, smb_shares_exposed) exist because SMB is both extremely useful and, misconfigured, one of the most exploited protocols on internal networks.",
+      "see_also": [
+        "lateral_movement",
+        "mitm",
+        "rdp"
+      ],
+      "category": "protocol",
+      "difficulty": "intermediate"
+    },
+    {
+      "id": "rdp",
+      "term": "RDP",
+      "expansion": "Remote Desktop Protocol",
+      "short": "Microsoft's protocol for remotely logging into and controlling a Windows machine's graphical desktop.",
+      "detail": "RDP is a constant target for internet-wide scanning and brute-force login attempts wherever it is reachable. Network Level Authentication (NLA) requires the connecting party to authenticate before the full graphical logon session even starts, which shrinks the amount of pre-authentication code an attacker can reach.",
+      "why_it_matters": "The rdp_disabled_or_nla posture check and the lateral_smb_rdp detector look at RDP from opposite ends: one asks whether this machine is configured safely, the other asks whether RDP is being used to hop between many internal hosts in a way that looks like movement rather than routine remote work.",
+      "see_also": [
+        "smb",
+        "lateral_movement"
+      ],
+      "category": "protocol",
+      "difficulty": "intermediate"
+    },
+    {
+      "id": "llmnr",
+      "term": "LLMNR",
+      "expansion": "Link-Local Multicast Name Resolution",
+      "short": "A fallback name-resolution protocol that broadcasts a name lookup to the whole local network segment whenever DNS fails to resolve it.",
+      "detail": "Because any device on the segment can answer an LLMNR query, and Windows will accept that answer, an attacker running a tool like Responder can simply answer every LLMNR request itself -- often capturing the querying device's NTLM authentication hash in the process. This is one of the most common initial-access techniques on flat, unsegmented Windows networks.",
+      "why_it_matters": "The llmnr_disabled posture check exists specifically to close this off; it has a real cost on small networks without a working internal DNS server (some device discovery may stop working), which is why it is a check to make a deliberate decision about, not just switch off blindly.",
+      "see_also": [
+        "arp_spoofing",
+        "mitm",
+        "dns",
+        "netbios"
+      ],
+      "category": "protocol",
+      "difficulty": "intermediate"
+    },
+    {
+      "id": "netbios",
+      "term": "NetBIOS",
+      "expansion": "Network Basic Input/Output System",
+      "short": "A legacy Windows name-resolution and session protocol that, like LLMNR, answers broadcast queries on the local network segment.",
+      "detail": "NetBIOS predates DNS-based Windows networking and is kept around mainly for compatibility with very old devices and software. It shares LLMNR's core weakness: broadcast name queries with no authentication of who answers, making it a companion target for the same Responder-style credential-capture attacks.",
+      "why_it_matters": "The netbios_disabled posture check and the broadcast_noise hygiene rule both look at NetBIOS traffic, from different angles: one checks the configuration, the other checks how much broadcast chatter it is actually producing.",
+      "see_also": [
+        "llmnr",
+        "broadcast",
+        "mitm"
+      ],
+      "category": "protocol",
+      "difficulty": "intermediate"
+    },
+    {
+      "id": "wpad",
+      "term": "WPAD",
+      "expansion": "Web Proxy Auto-Discovery",
+      "short": "A protocol a device uses to automatically ask the network 'what proxy server should I use?', via DHCP, DNS, or NetBIOS broadcast.",
+      "detail": "Because the request is effectively 'anyone who wants to be my proxy, speak now', an attacker who answers first can hand the device a malicious proxy configuration and transparently intercept and modify its unencrypted web traffic from then on -- entirely without the user noticing anything change.",
+      "why_it_matters": "The wpad_disabled posture check exists for exactly this reason; some corporate networks do rely on WPAD to configure a legitimate proxy automatically, so disabling it can mean needing to configure that proxy manually instead.",
+      "see_also": [
+        "proxy",
+        "mitm",
+        "dhcp"
+      ],
+      "category": "protocol",
+      "difficulty": "advanced"
+    },
+    {
+      "id": "promiscuous_mode",
+      "term": "Promiscuous mode",
+      "expansion": null,
+      "short": "A network interface mode where the adapter passes every frame it sees on the wire up to software, not just frames addressed to its own MAC address.",
+      "detail": "Normally a network adapter silently discards traffic not addressed to it; promiscuous mode is what lets a packet-capture tool see everything on the local segment, not just its own traffic. Windows does not expose a true, direct API to query whether an adapter is in this mode, which is why the promiscuous_adapters posture check is explicitly a heuristic (it looks for known capture-driver bindings instead) rather than a direct measurement.",
+      "why_it_matters": "A capture driver bound to an adapter is not inherently malicious -- NetAudit itself may rely on one (Npcap) to do its job -- but it is worth knowing what is capable of seeing your traffic.",
+      "see_also": [
+        "pcap",
+        "bpf"
+      ],
+      "category": "networking",
+      "difficulty": "intermediate"
+    },
+    {
+      "id": "pcap",
+      "term": "PCAP",
+      "expansion": "Packet capture",
+      "short": "Both the general term for recording raw network traffic, and the specific libpcap file format (.pcap) used to store and exchange captures.",
+      "detail": "A .pcap file starts with a small global header (magic number, version, snap length, link type) followed by a sequence of per-packet records, each with its own timestamp and length fields. Tools like Wireshark read this format directly, which is why NetAudit's PCAP export (Part E) writes a genuine libpcap file rather than a proprietary log.",
+      "why_it_matters": "On capture tiers where only packet headers (not full frames) were stored, an exported .pcap synthesises the frame from the stored fields and pads the missing payload with zeroes, rather than fabricating bytes that were never actually observed.",
+      "see_also": [
+        "packet",
+        "bpf",
+        "promiscuous_mode"
+      ],
+      "category": "tool",
+      "difficulty": "intermediate"
+    },
+    {
+      "id": "bpf",
+      "term": "BPF",
+      "expansion": "Berkeley Packet Filter",
+      "short": "A small, efficient filter language and engine that decides, at capture time, which packets are worth keeping.",
+      "detail": "A BPF expression like `tcp port 443 or udp port 53` is compiled into a tiny program the capture layer runs against every packet, discarding non-matches before they ever reach the application -- far cheaper than capturing everything and filtering afterwards. NetAudit accepts a BPF-syntax subset for capture filters and parses it into a structural representation itself, rather than ever handing the expression to a shell or an eval, since malformed or hostile filter input is one of the highest-risk inputs a capture tool can accept.",
+      "why_it_matters": "Not every capture tier can filter at the point of capture; on tiers that cannot, the same predicate is applied at ingest instead, and the filter's response reports which tier it actually took effect at.",
+      "see_also": [
+        "pcap",
+        "packet"
+      ],
+      "category": "tool",
+      "difficulty": "advanced"
+    },
+    {
+      "id": "mitre_attack",
+      "term": "MITRE ATT&CK",
+      "expansion": "Adversarial Tactics, Techniques, and Common Knowledge",
+      "short": "A public, structured knowledge base of real-world attacker behaviour, organised into tactics (the attacker's goal, like 'Command and Control') and techniques (the specific method, like 'Application Layer Protocol').",
+      "detail": "Tactic ids look like TA0011; technique ids look like T1071.001 (a sub-technique of T1071). Mapping a detector to a tactic/technique id is a way of saying 'this is a known, documented pattern, not something this tool invented' -- and gives you a stable reference to look up more detail elsewhere.",
+      "why_it_matters": "Some detectors here (known_bad_peer, new_external_peer, protocol_anomaly, deprecated_protocol) ship 'tactic-only', citing the broad category without a specific technique id, because the behaviour genuinely does not map to one precise technique -- that is a deliberate honesty choice, not a missing field.",
+      "see_also": [
+        "c2",
+        "lateral_movement",
+        "exfiltration"
+      ],
+      "category": "tool",
+      "difficulty": "intermediate"
+    },
+    {
+      "id": "false_positive",
+      "term": "False positive",
+      "expansion": null,
+      "short": "A detector or check firing on something that is, in fact, legitimate and not a problem.",
+      "detail": "No behavioural detector can be perfect: the same timing pattern that looks like malware beaconing is also produced by a software update checker; the same volume spike that looks like exfiltration is also produced by a backup job. Every detector and rule in this tool documents its specific known false-positive causes rather than pretending they don't exist.",
+      "why_it_matters": "A confidence score, or a status of warn instead of fail, is this tool's way of saying 'this needs your judgement', not 'this is definitely bad' -- treating every finding as a hint to investigate, not a verdict, is the correct way to use any of this.",
+      "see_also": [
+        "baseline",
+        "beaconing"
+      ],
+      "category": "security",
+      "difficulty": "beginner"
+    },
+    {
+      "id": "baseline",
+      "term": "Baseline",
+      "expansion": null,
+      "short": "A learned profile of what 'normal' looks like for a specific process, peer, or host, built from historical observation.",
+      "detail": "Baseline-gated detectors (data_exfiltration, off_hours_transfer, new_external_peer) do not fire until they have enough history (a minimum sample count) to know what normal even means for that specific process/peer pair -- which also means a brand-new install, or a newly-installed piece of software, looks identical to something genuinely new and suspicious until enough history accumulates.",
+      "why_it_matters": "A baseline is a statement about this machine's own history, not a universal standard -- what is 'normal' for a backup tool that always transfers gigabytes at 2am is not normal for a text editor doing the same thing.",
+      "see_also": [
+        "false_positive",
+        "exfiltration"
+      ],
+      "category": "security",
+      "difficulty": "intermediate"
+    },
+    {
+      "id": "loopback",
+      "term": "Loopback",
+      "expansion": null,
+      "short": "Traffic a machine sends to itself, using the address 127.0.0.1 (IPv4) or ::1 (IPv6) -- it never actually leaves the network interface.",
+      "detail": "Loopback is how a service on a machine talks to another service on the same machine over the network stack, without needing a real network at all. NetAudit excludes loopback traffic from threat detection entirely, because in testing it produced a confident false positive: the machine appeared to be port-scanning itself across over a hundred loopback ports.",
+      "why_it_matters": "A service that only needs to be reached from the same machine should bind to loopback rather than 0.0.0.0 -- the listening_on_all_interfaces posture check exists to flag services that don't.",
+      "see_also": [
+        "ip_address",
+        "port"
+      ],
+      "category": "networking",
+      "difficulty": "beginner"
+    },
+    {
+      "id": "broadcast",
+      "term": "Broadcast",
+      "expansion": null,
+      "short": "A single packet addressed so that every device on the local network segment receives it, rather than one specific device.",
+      "detail": "The IPv4 broadcast address for a subnet ends in .255 (e.g. 192.168.1.255 for a /24); the special MAC address FF:FF:FF:FF:FF:FF means 'every device on this segment'. DHCP discovery, ARP requests, and LLMNR/NetBIOS name lookups all rely on broadcast to reach every device without knowing its address in advance.",
+      "why_it_matters": "NetAudit excludes broadcast traffic from threat detection, because the broadcast MAC address answering for two broadcast IP addresses at once looked, in testing, exactly like a critical ARP spoofing event -- a confident false positive, not a real one.",
+      "see_also": [
+        "multicast",
+        "arp",
+        "dhcp"
+      ],
+      "category": "networking",
+      "difficulty": "beginner"
+    },
+    {
+      "id": "multicast",
+      "term": "Multicast",
+      "expansion": null,
+      "short": "A single packet addressed to a specific group of interested devices, in between a broadcast (everyone) and a unicast (one specific device).",
+      "detail": "A device has to explicitly join a multicast group to receive traffic sent to it; mDNS (UDP/5353, used for service discovery like AirPlay/Chromecast) and LLMNR both use multicast rather than true broadcast. Multicast traffic is still visible to anything on the segment capable of joining the group, which is the same underlying exposure broadcast has, just scoped to a smaller, self-selected audience.",
+      "why_it_matters": "The mdns_exposure posture check and the broadcast_noise hygiene rule both treat heavy multicast chatter as worth a look, for the same reason broadcast chatter is: it can leak information (a hostname, a service list) to anyone nearby who is listening.",
+      "see_also": [
+        "broadcast",
+        "llmnr"
+      ],
+      "category": "networking",
+      "difficulty": "intermediate"
+    }
+  ]
+}

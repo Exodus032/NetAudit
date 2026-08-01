@@ -162,6 +162,7 @@ answering "what should I fix first?".
       "id": "posture:smb_signing_required",
       "source": "posture",
       "title": "Require SMB signing",
+      "observed": "SMB signing is not required on the client or the server",
       "severity": "high",
       "impact_score": 82,
       "effort": "low",
@@ -178,6 +179,16 @@ answering "what should I fix first?".
 `impact_score` 0-100. `effort` ∈ `low` | `medium` | `high`.
 Ranking must favour high impact + low effort, and must be deterministic and
 explained in `why_first`.
+
+`observed` (added after the freeze; optional and additive, so it does not
+break a client written against the original shape) is what is actually true
+right now, and may be absent when the source has nothing more specific to
+say than the title. It exists because posture check titles state the
+*desired* end state ("Require SMB signing", "Default inbound action is
+Block"). That reads correctly beside a pass/fail badge and backwards in this
+list, where every entry is by definition a failure: without `observed` a
+student sees a headline asserting the thing is already fine, filed under
+"fix this first". Clients should render it directly beneath the title.
 
 ---
 

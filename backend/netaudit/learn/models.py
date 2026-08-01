@@ -107,6 +107,12 @@ class PrioritisedFinding(BaseModel):
     id: str
     source: FindingSource
     title: str
+    # Optional and additive. Posture check titles state the desired end
+    # state ("SMB signing is required"), which reads correctly beside a
+    # pass/fail badge but backwards in a list where every entry is by
+    # definition a failure. This carries what is actually true instead.
+    # Absent when the source has nothing more specific to say.
+    observed: Optional[str] = None
     severity: Severity
     impact_score: int
     effort: Effort

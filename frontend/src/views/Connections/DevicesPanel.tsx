@@ -1,6 +1,7 @@
 import { useDevices } from "../../hooks/useDevices";
 import { RiskBadge } from "../../components/common/Badge";
 import { SkeletonRows, EmptyState, ErrorState } from "../../components/common/States";
+import { ExplainChip } from "../../components/learn/ExplainChip";
 import { formatBytes, formatRelativeTime } from "../../lib/format";
 import "./DevicesPanel.css";
 
@@ -24,7 +25,10 @@ export function DevicesPanel() {
             <th>Last seen</th>
             <th>Total bytes</th>
             <th>Badges</th>
-            <th>Risk</th>
+            <th>
+              Risk
+              <ExplainChip kind="metric" id="risk" label="Risk" />
+            </th>
           </tr>
         </thead>
         <tbody>

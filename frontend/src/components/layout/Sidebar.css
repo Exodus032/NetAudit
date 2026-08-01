@@ -89,3 +89,48 @@
     justify-content: center;
   }
 }
+
+/* Three grouped sections rather than one flat list of eighteen links. The
+   scroll container takes the leftover height so the brand and footer stay
+   pinned while the middle scrolls. */
+.sidebar-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 8px;
+}
+
+.sidebar-section + .sidebar-section {
+  margin-top: 10px;
+}
+
+.sidebar-section-label {
+  margin: 0;
+  padding: 8px 16px 2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Was flex:1 back when it was the only list in the column. */
+.sidebar-nav {
+  flex: none;
+}
+
+@media (max-width: 860px) {
+  .sidebar-section-label {
+    /* Reachable by screen readers, out of the way of a 64px rail. */
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .sidebar-section + .sidebar-section {
+    border-top: 1px solid var(--border);
+    padding-top: 6px;
+  }
+}

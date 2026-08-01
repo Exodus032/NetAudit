@@ -1,0 +1,113 @@
+.compliance-framework-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+.compliance-framework-btn {
+  text-align: left;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+.compliance-framework-btn:hover {
+  background: var(--surface-2);
+}
+.compliance-framework-btn.active {
+  border-color: var(--series-1);
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--series-1) 10%, var(--surface-1));
+}
+.compliance-framework-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.compliance-summary {
+  margin-top: 12px;
+}
+
+.compliance-status-pill {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid;
+  white-space: nowrap;
+}
+.compliance-status-pass {
+  color: var(--status-good);
+  border-color: var(--status-good);
+}
+.compliance-status-fail {
+  color: var(--status-critical);
+  border-color: var(--status-critical);
+}
+.compliance-status-partial {
+  color: var(--status-warning);
+  border-color: var(--status-warning);
+}
+.compliance-status-not-assessed {
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+
+.compliance-control-card {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.compliance-control-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  color: inherit;
+}
+
+.compliance-control-caret {
+  color: var(--text-muted);
+  flex: none;
+}
+
+.compliance-control-id {
+  color: var(--text-muted);
+  flex: none;
+}
+
+.compliance-control-title {
+  flex: 1 1 auto;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.compliance-control-detail {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.compliance-evidence-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.compliance-evidence-table td {
+  padding: 4px 8px 4px 0;
+  border-bottom: 1px solid var(--border);
+}

@@ -27,6 +27,10 @@ class FindingsProvider(Protocol):
         title: str
         severity: "critical"|"high"|"medium"|"low"|"info"
         one_line_fix: str (optional but strongly expected)
+        observed: str (optional) -- what is actually true right now.
+            Strongly expected from `posture_checks()`, whose titles state
+            the desired end state and so read backwards on their own in a
+            list where every entry is by definition a failure.
 
     `posture_checks()` additionally expects:
         status: "fail"|"warn"  (only failing/warning checks should be

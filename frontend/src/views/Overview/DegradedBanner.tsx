@@ -13,7 +13,7 @@ export function DegradedBanner({ capture }: { capture: CaptureStatus }) {
   if (!isDegraded) return null;
 
   return (
-    <div className="degraded-banner" role="alert">
+    <div className="degraded-banner" data-tour="capture-tier-banner" role="alert">
       <span className="degraded-icon" aria-hidden="true">▲</span>
       <div className="degraded-body">
         <div className="degraded-title">

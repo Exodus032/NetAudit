@@ -22,7 +22,7 @@ export function FilterBar({ filters, onChange, liveTailOn, onToggleLiveTail, onE
   const set = <K extends keyof LogFilters>(key: K, value: LogFilters[K]) => onChange({ ...filters, [key]: value });
 
   return (
-    <div className="filter-bar">
+    <div className="filter-bar" data-tour="traffic-log-filter">
       <input
         type="search"
         className="filter-input filter-q"

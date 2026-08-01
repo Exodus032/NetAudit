@@ -73,3 +73,28 @@
 .theme-toggle:hover {
   background: var(--surface-2);
 }
+
+.learn-toggle {
+  height: 30px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+}
+.learn-toggle:hover {
+  background: var(--surface-2);
+}
+.learn-toggle.on {
+  color: var(--accent, var(--text-primary));
+  border-color: var(--accent, var(--border));
+}
+.learn-toggle span {
+  font-weight: 700;
+}

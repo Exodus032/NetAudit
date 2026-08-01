@@ -13,6 +13,7 @@ import { ProtocolBreakdown } from "./ProtocolBreakdown";
 import { EncryptedSplit } from "./EncryptedSplit";
 import { TopTalkers } from "./TopTalkers";
 import { SecurityScoreTile } from "./SecurityScoreTile";
+import { ExplainChip } from "../../components/learn/ExplainChip";
 import { formatBitrate, formatBytesPair, formatBytes, formatNumber } from "../../lib/format";
 
 export function OverviewView({ onNavigate }: { onNavigate: (view: ViewId) => void }) {
@@ -34,7 +35,7 @@ export function OverviewView({ onNavigate }: { onNavigate: (view: ViewId) => voi
       </section>
 
       <section className="view-section">
-        <div className="grid-stats">
+        <div className="grid-stats" data-tour="stat-tiles">
           <StatTile
             label="Total traffic"
             value={summary ? formatBytes(summary.bytes_total) : "—"}
@@ -80,7 +81,10 @@ export function OverviewView({ onNavigate }: { onNavigate: (view: ViewId) => voi
 
       <section className="view-section">
         <div className="view-section-header">
-          <span className="view-section-title">Live throughput</span>
+          <span className="view-section-title">
+            Live throughput
+            <ExplainChip kind="metric" id="throughput_bps" label="Live throughput" />
+          </span>
           <WindowSelector value={window} onChange={setWindow} />
         </div>
         <div className="panel">
@@ -93,7 +97,7 @@ export function OverviewView({ onNavigate }: { onNavigate: (view: ViewId) => voi
           <div className="panel-title">Protocol breakdown</div>
           {summary ? <ProtocolBreakdown summary={summary} /> : <ErrorState title="No data yet" />}
         </div>
-        <div className="panel">
+        <div className="panel" data-tour="encrypted-split">
           <div className="panel-title">Encrypted vs plaintext</div>
           {summary ? <EncryptedSplit summary={summary} /> : <ErrorState title="No data yet" />}
         </div>
@@ -101,7 +105,10 @@ export function OverviewView({ onNavigate }: { onNavigate: (view: ViewId) => voi
 
       <section className="view-section">
         <div className="panel">
-          <div className="panel-title">Top talkers</div>
+          <div className="panel-title">
+            Top talkers
+            <ExplainChip kind="metric" id="risk" label="Risk" />
+          </div>
           <TopTalkers window={window} />
         </div>
       </section>

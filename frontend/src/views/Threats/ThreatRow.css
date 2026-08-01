@@ -59,15 +59,21 @@
   cursor: help;
 }
 
+.threat-row-title-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
 .threat-row-title-btn {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   width: 100%;
   background: transparent;
   border: none;
   padding: 0;
-  margin-bottom: 4px;
   text-align: left;
   cursor: pointer;
   color: var(--text-primary);

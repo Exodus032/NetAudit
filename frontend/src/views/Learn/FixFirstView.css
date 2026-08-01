@@ -1,0 +1,127 @@
+.fixfirst-generated {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.fixfirst-intro {
+  font-size: 13px;
+  color: var(--text-secondary);
+  max-width: 72ch;
+  margin: 0;
+}
+
+.fixfirst-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fixfirst-card {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+}
+
+.fixfirst-rank {
+  flex: none;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-muted);
+  min-width: 30px;
+}
+
+.fixfirst-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.fixfirst-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.fixfirst-effort {
+  text-transform: none;
+}
+
+.fixfirst-impact {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.fixfirst-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.fixfirst-why {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0 0 8px;
+}
+
+.fixfirst-fix {
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+}
+
+.fixfirst-fix-label {
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.fixfirst-goto {
+  flex: none;
+  background: transparent;
+  border: 1px solid var(--series-1);
+  color: var(--series-1);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.fixfirst-goto:hover {
+  background: color-mix(in srgb, var(--series-1) 14%, transparent);
+}
+
+@media (max-width: 640px) {
+  .fixfirst-card {
+    flex-direction: column;
+  }
+  .fixfirst-goto {
+    align-self: flex-start;
+  }
+}
+
+/* The observed state, shown directly under the title. Posture titles state
+   the goal, so without this a failing item reads like good news. */
+.fixfirst-observed {
+  margin: 2px 0 6px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+.fixfirst-observed-label {
+  color: var(--text-muted);
+  font-weight: 600;
+  margin-right: 4px;
+}

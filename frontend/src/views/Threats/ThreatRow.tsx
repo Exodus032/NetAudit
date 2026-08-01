@@ -3,6 +3,7 @@ import type { Threat } from "../../api/types";
 import { SeverityBadge, CategoryChip, ThreatStatusBadge } from "../../components/common/Badge";
 import { CommandBlock } from "../../components/common/CommandBlock";
 import { ConfidenceMeter } from "./ConfidenceMeter";
+import { ExplainChip } from "../../components/learn/ExplainChip";
 import { formatDateTime, formatNumber } from "../../lib/format";
 import "./ThreatRow.css";
 
@@ -10,10 +11,12 @@ export function ThreatRow({
   threat,
   onAcknowledge,
   onUnacknowledge,
+  isFirst,
 }: {
   threat: Threat;
   onAcknowledge: (id: string, note?: string) => Promise<void>;
   onUnacknowledge: (id: string, note?: string) => Promise<void>;
+  isFirst?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -37,6 +40,7 @@ export function ThreatRow({
         <ThreatStatusBadge status={threat.status} />
         <CategoryChip category={threat.category} />
         <ConfidenceMeter confidence={threat.confidence} />
+        <ExplainChip kind="metric" id="confidence" label="Confidence" />
         <div className="threat-row-spacer" />
         {!isResolved && (
           <button className="threat-ack-btn" onClick={handleToggleAck} disabled={busy}>
@@ -60,10 +64,15 @@ export function ThreatRow({
         </div>
       )}
 
-      <button className="threat-row-title-btn" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
-        <span className="threat-row-caret" aria-hidden="true">{open ? "▾" : "▸"}</span>
-        <span className="threat-row-title">{threat.title}</span>
-      </button>
+      <div className="threat-row-title-row">
+        {/* ExplainChip is its own <button> — kept outside threat-row-title-btn
+            so it isn't nested inside another interactive control. */}
+        <button className="threat-row-title-btn" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+          <span className="threat-row-caret" aria-hidden="true">{open ? "▾" : "▸"}</span>
+          <span className="threat-row-title">{threat.title}</span>
+        </button>
+        <ExplainChip kind="detector" id={threat.detector_id} label={threat.title} />
+      </div>
       <p className="threat-row-summary">{threat.summary}</p>
 
       {threat.false_positive_notes && (
@@ -85,7 +94,7 @@ export function ThreatRow({
       </div>
 
       {open && (
-        <div className="threat-row-detail">
+        <div className="threat-row-detail" {...(isFirst ? { "data-tour": "threat-detail-drawer" } : {})}>
           <p className="threat-row-detail-text">{threat.detail}</p>
 
           {threat.evidence.length > 0 && (

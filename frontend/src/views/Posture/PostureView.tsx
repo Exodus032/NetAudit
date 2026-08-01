@@ -50,6 +50,7 @@ export function PostureView() {
         <div className="posture-toolbar">
           <select
             className="posture-filter-select"
+            data-tour="posture-category-list"
             value={category}
             onChange={(e) => setCategory(e.target.value)}
             aria-label="Filter by category"

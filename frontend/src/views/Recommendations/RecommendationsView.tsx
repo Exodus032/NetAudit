@@ -35,15 +35,20 @@ export function RecommendationsView() {
         <EmptyState title="No open recommendations" detail="NetAudit hasn't flagged anything that needs your attention right now." icon="✓" />
       )}
 
-      {recommendations.map((rec) => (
-        <RecommendationCard
-          key={rec.id}
-          rec={rec}
-          onDismiss={dismiss}
-          onRestore={restore}
-          highlight={newlyArrivedIds.has(rec.id)}
-        />
-      ))}
+      {recommendations.length > 0 && (
+        <div data-tour="recommendations-list">
+          {recommendations.map((rec, i) => (
+            <RecommendationCard
+              key={rec.id}
+              rec={rec}
+              onDismiss={dismiss}
+              onRestore={restore}
+              highlight={newlyArrivedIds.has(rec.id)}
+              isFirst={i === 0}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

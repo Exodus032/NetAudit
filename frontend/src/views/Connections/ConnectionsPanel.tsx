@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useConnections } from "../../hooks/useConnections";
 import { RiskBadge } from "../../components/common/Badge";
 import { SkeletonRows, EmptyState, ErrorState } from "../../components/common/States";
+import { ExplainChip } from "../../components/learn/ExplainChip";
 import { formatBytes, formatRelativeTime } from "../../lib/format";
 import type { Connection } from "../../api/types";
 import "./ConnectionsPanel.css";
@@ -36,8 +37,8 @@ export function ConnectionsPanel() {
   if (!loading && connections.length === 0) return <EmptyState title="No active connections" detail="Connections will appear as traffic flows." />;
 
   return (
-    <div className="conn-groups">
-      {groups.map((g) => (
+    <div className="conn-groups" data-tour="connections-table">
+      {groups.map((g, gi) => (
         <div className="conn-group" key={g.process}>
           <div className="conn-group-header">
             <span className="conn-group-process">{g.process}</span>
@@ -53,7 +54,10 @@ export function ConnectionsPanel() {
                   <th>In</th>
                   <th>Out</th>
                   <th>Last seen</th>
-                  <th>Risk</th>
+                  <th {...(gi === 0 ? { "data-tour": "connections-risk-column" } : {})}>
+                    Risk
+                    <ExplainChip kind="metric" id="risk" label="Risk" />
+                  </th>
                 </tr>
               </thead>
               <tbody>

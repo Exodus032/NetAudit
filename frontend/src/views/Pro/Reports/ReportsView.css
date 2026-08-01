@@ -1,0 +1,23 @@
+.reports-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.reports-format-tag {
+  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.reports-iframe {
+  width: 100%;
+  height: 70vh;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: #fff;
+}
+
+.reports-pre {
+  max-height: 70vh;
+}

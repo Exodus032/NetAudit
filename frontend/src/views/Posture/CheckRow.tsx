@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { PostureCheck } from "../../api/types";
 import { CheckStatusBadge, SeverityBadge } from "../../components/common/Badge";
 import { CommandBlock } from "../../components/common/CommandBlock";
+import { ExplainChip } from "../../components/learn/ExplainChip";
 import "./CheckRow.css";
 
 export function CheckRow({ check }: { check: PostureCheck }) {
@@ -10,12 +11,17 @@ export function CheckRow({ check }: { check: PostureCheck }) {
 
   return (
     <div className={`check-row${open ? " open" : ""}${isNeutral ? " neutral" : ""}`}>
-      <button className="check-row-summary" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
-        <span className="check-row-caret" aria-hidden="true">{open ? "▾" : "▸"}</span>
-        <CheckStatusBadge status={check.status} />
-        <SeverityBadge severity={check.severity} />
-        <span className="check-row-title">{check.title}</span>
-      </button>
+      <div className="check-row-header">
+        {/* ExplainChip is its own <button> — kept outside check-row-summary
+            so it isn't nested inside another interactive control. */}
+        <button className="check-row-summary" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+          <span className="check-row-caret" aria-hidden="true">{open ? "▾" : "▸"}</span>
+          <CheckStatusBadge status={check.status} />
+          <SeverityBadge severity={check.severity} />
+          <span className="check-row-title">{check.title}</span>
+        </button>
+        <ExplainChip kind="check" id={check.id} label={check.title} />
+      </div>
       {open && (
         <div className="check-row-detail">
           <dl className="check-row-grid">

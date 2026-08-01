@@ -2,6 +2,7 @@ import { useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { TrafficLogEntry } from "../../api/types";
 import { RiskBadge } from "../../components/common/Badge";
+import { ExplainChip } from "../../components/learn/ExplainChip";
 import { formatBytes, formatTime } from "../../lib/format";
 import "./LogTable.css";
 
@@ -60,7 +61,7 @@ export function LogTable({ entries, sort, order, onSortChange, onRowClick, onScr
   const items = virtualizer.getVirtualItems();
 
   return (
-    <div className="log-table-container scroll-y" ref={parentRef} onScroll={handleScroll}>
+    <div className="log-table-container scroll-y" data-tour="traffic-log-table" ref={parentRef} onScroll={handleScroll}>
       <table className="data-table log-table" role="table" aria-label="Traffic log entries" aria-rowcount={entries.length} style={{ minWidth: ROW_WIDTH }}>
         <colgroup>
           {COLS.map((c) => (
@@ -80,7 +81,10 @@ export function LogTable({ entries, sort, order, onSortChange, onRowClick, onScr
                   </button>
                 </th>
               ) : (
-                <th key={c.key}>{c.label}</th>
+                <th key={c.key}>
+                  {c.label}
+                  {c.key === "risk" && <ExplainChip kind="metric" id="risk" label="Risk" />}
+                </th>
               ),
             )}
           </tr>

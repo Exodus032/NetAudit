@@ -1,0 +1,55 @@
+.alerts-config-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.alerts-enable-toggle {
+  align-self: flex-start;
+}
+
+.alerts-quiet-hours {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.alerts-channel-card {
+  align-items: flex-start;
+}
+
+.alerts-webhook-url {
+  margin-top: 6px;
+  width: 100%;
+  max-width: 420px;
+}
+
+.alerts-last-status {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  vertical-align: middle;
+}
+.alerts-status-delivered {
+  color: var(--status-good);
+  border-color: var(--status-good);
+}
+.alerts-status-failed {
+  color: var(--status-critical);
+  border-color: var(--status-critical);
+}
+.alerts-status-rate_limited,
+.alerts-status-suppressed {
+  color: var(--status-warning);
+  border-color: var(--status-warning);
+}
+.alerts-status-unavailable {
+  color: var(--text-muted);
+}

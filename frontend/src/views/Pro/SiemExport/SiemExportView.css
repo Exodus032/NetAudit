@@ -1,0 +1,10 @@
+.siem-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.siem-preview {
+  max-height: 420px;
+  font-size: 11.5px;
+}

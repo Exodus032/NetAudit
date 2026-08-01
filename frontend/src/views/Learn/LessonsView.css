@@ -1,0 +1,230 @@
+.lessons-count {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.lessons-path {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lesson-card {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.lesson-card.lesson-complete {
+  border-color: color-mix(in srgb, var(--status-good) 45%, var(--border));
+}
+
+.lesson-card-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+}
+
+.lesson-card-head:hover {
+  background: var(--surface-2);
+}
+
+.lesson-order {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-weight: 700;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lesson-complete .lesson-order {
+  background: var(--status-good);
+  color: #ffffff;
+}
+
+.lesson-head-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.lesson-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.lesson-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.lesson-difficulty-beginner {
+  color: var(--status-good);
+}
+.lesson-difficulty-intermediate {
+  color: var(--status-warning);
+}
+.lesson-difficulty-advanced {
+  color: var(--status-serious);
+}
+
+.lesson-summary {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.lesson-meta {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.lesson-progress-label {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.lesson-card-body {
+  padding: 0 16px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.lesson-prereqs {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 12px 0;
+}
+
+.lesson-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin: 12px 0 4px;
+}
+
+.lesson-objectives ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.lesson-steps {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lesson-step {
+  background: var(--surface-2);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+}
+
+.lesson-step-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.lesson-step-check input {
+  margin-top: 3px;
+}
+
+.lesson-step-instruction {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.lesson-step-explanation {
+  margin: 4px 0 0 24px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.lesson-step-deeplink {
+  margin: 8px 0 0 24px;
+  background: transparent;
+  border: 1px solid var(--series-1);
+  color: var(--series-1);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.lesson-step-deeplink:hover {
+  background: color-mix(in srgb, var(--series-1) 14%, transparent);
+}
+
+.lesson-step-terms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 0 24px;
+}
+
+.lesson-step-term {
+  display: inline-flex;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-0);
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: capitalize;
+}
+
+.lesson-live-note {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  margin: 12px 0 0;
+}
+
+.lesson-reset-btn {
+  margin-top: 12px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  padding: 5px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.lesson-reset-btn:hover {
+  color: var(--text-secondary);
+  background: var(--surface-2);
+}

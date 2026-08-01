@@ -240,7 +240,25 @@ class TestCors:
 
     def test_no_wildcard_origin_configured(self):
         assert "*" not in config.CORS_ORIGINS
-        assert config.CORS_ORIGINS == ["http://localhost:5173", "http://127.0.0.1:5173"]
+
+    def test_every_allowed_origin_is_loopback_and_plain_http(self):
+        """Asserts the property rather than a literal list, so adding the
+        app's own origin (needed for /ws/live when the backend serves the
+        built SPA) doesn't require editing an expected constant -- but
+        adding a routable host still fails."""
+        from urllib.parse import urlparse
+
+        assert config.CORS_ORIGINS, "the allowlist must not be empty"
+        for origin in config.CORS_ORIGINS:
+            parsed = urlparse(origin)
+            assert parsed.scheme == "http", origin
+            assert parsed.hostname in {"127.0.0.1", "localhost"}, origin
+            assert parsed.port is not None, origin
+
+    def test_the_apps_own_origin_is_allowed(self):
+        """Otherwise the shipped app is refused its own websocket upgrade
+        and shows "Reconnecting" forever while REST still works."""
+        assert f"http://127.0.0.1:{config.PORT}" in config.CORS_ORIGINS
 
     def test_evil_origin_not_reflected_on_simple_request(self, app_client):
         client, app, _ = app_client

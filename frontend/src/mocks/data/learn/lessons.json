@@ -1,0 +1,390 @@
+{
+  "lessons": [
+    {
+      "id": "how-networks-talk",
+      "title": "How your network actually talks",
+      "summary": "Learn the basic vocabulary -- IP/MAC addresses, ports, packets, flows -- by reading your own live traffic.",
+      "difficulty": "beginner",
+      "estimated_minutes": 6,
+      "prerequisites": [],
+      "objectives": [
+        "Tell an IP address apart from a MAC address and explain what each is for",
+        "Find a specific conversation in the traffic log and identify its five defining fields",
+        "Explain why a 'flow' is not the same thing as a single packet"
+      ],
+      "steps": [
+        {
+          "order": 1,
+          "instruction": "Open the Traffic Log and find any one row.",
+          "explanation": "Every row is one flow: a conversation between this machine and one peer, over one port, using one protocol. The peer's IP address gets your traffic to the right device; the port gets it to the right program on that device.",
+          "check": {
+            "kind": "view_visited",
+            "value": "traffic-log"
+          },
+          "glossary_terms": [
+            "ip_address",
+            "port",
+            "flow"
+          ]
+        },
+        {
+          "order": 2,
+          "instruction": "Note the protocol column (TCP or UDP) on that row.",
+          "explanation": "TCP sets up a connection and guarantees delivery, which is why it's used for web traffic, file transfer, and remote access. UDP just sends and moves on, which is why DNS and streaming use it -- a late DNS answer is often worse than a slightly incomplete one.",
+          "check": {
+            "kind": "manual",
+            "value": "identify whether the row you picked is TCP or UDP"
+          },
+          "glossary_terms": [
+            "tcp",
+            "udp"
+          ]
+        },
+        {
+          "order": 3,
+          "instruction": "Open the Overview and find the device or interface information.",
+          "explanation": "Your MAC address only matters for the last hop, from your device to the next one on the wire; your gateway is the router your traffic goes through for everything outside your local network. ARP is what maps one to the other.",
+          "check": {
+            "kind": "view_visited",
+            "value": "overview"
+          },
+          "glossary_terms": [
+            "mac_address",
+            "gateway",
+            "arp"
+          ]
+        }
+      ],
+      "uses_live_data": true
+    },
+    {
+      "id": "spot-unencrypted-traffic",
+      "title": "Find traffic that isn't encrypted",
+      "summary": "Learn to tell encrypted from plaintext traffic, and why the difference matters.",
+      "difficulty": "beginner",
+      "estimated_minutes": 5,
+      "prerequisites": [
+        "how-networks-talk"
+      ],
+      "objectives": [
+        "Read the encrypted/plaintext split on the Overview",
+        "Filter the traffic log to plaintext-only traffic",
+        "Explain the real risk of one plaintext finding on this machine"
+      ],
+      "steps": [
+        {
+          "order": 1,
+          "instruction": "Open the Overview and find the 'Encrypted vs plaintext' panel.",
+          "explanation": "Encrypted traffic can still be seen -- who you talked to, how much -- but not read. Plaintext can be read in full by anyone on the path.",
+          "check": {
+            "kind": "view_visited",
+            "value": "overview"
+          },
+          "glossary_terms": [
+            "encryption",
+            "plaintext",
+            "tls"
+          ]
+        },
+        {
+          "order": 2,
+          "instruction": "Filter the Traffic Log to port 80 (plain HTTP) or port 21/23 (FTP/Telnet).",
+          "explanation": "These ports carry protocols with no encryption at all. If anything shows up, that traffic's content -- and any credentials sent over it -- was visible in full to anything on the network path.",
+          "check": {
+            "kind": "filter_applied",
+            "value": "port:80,21,23"
+          },
+          "glossary_terms": [
+            "https",
+            "plaintext"
+          ]
+        },
+        {
+          "order": 3,
+          "instruction": "Check the Recommendations view for a plaintext_http or plaintext_dns finding.",
+          "explanation": "If one of these has fired, it names the actual peer and byte count from your own traffic -- read the specific evidence, not just the title, before deciding whether it matters to you.",
+          "check": {
+            "kind": "view_visited",
+            "value": "recommendations"
+          },
+          "glossary_terms": [
+            "mitm"
+          ]
+        }
+      ],
+      "uses_live_data": true
+    },
+    {
+      "id": "read-your-security-score",
+      "title": "Read your posture score, and fix one real check",
+      "summary": "Understand how the security score is built from posture checks, then walk one real failing (or warning) check through to its fix.",
+      "difficulty": "beginner",
+      "estimated_minutes": 8,
+      "prerequisites": [
+        "how-networks-talk"
+      ],
+      "objectives": [
+        "Explain what a posture check measures, as distinct from a threat detection",
+        "Find one failing or warning check on this machine and read its evidence",
+        "Identify the exact command that would fix it, and what it would break"
+      ],
+      "steps": [
+        {
+          "order": 1,
+          "instruction": "Open the Posture view and find the overall score and grade.",
+          "explanation": "The score is a weighted pass/warn/fail count across roughly 40 checks, not a single test -- a warn counts as half a pass, and a handful of checks are informational and never fail at all by design.",
+          "check": {
+            "kind": "view_visited",
+            "value": "posture"
+          },
+          "glossary_terms": []
+        },
+        {
+          "order": 2,
+          "instruction": "Find one check that is failing or warning and open its detail.",
+          "explanation": "Every check reports what was actually observed, what was expected, and the specific evidence behind that -- read the evidence before the verdict; it's the part you can verify yourself.",
+          "check": {
+            "kind": "element_clicked",
+            "value": "[data-tour='posture-category-list']"
+          },
+          "glossary_terms": [
+            "baseline"
+          ]
+        },
+        {
+          "order": 3,
+          "instruction": "Call GET /api/explain/check/{id} for that check's id.",
+          "explanation": "This gives you the mechanism in plain language: what data source it reads, exactly what makes it pass, fail, or warn, and a genuine reason the result might not mean what it looks like it means.",
+          "check": {
+            "kind": "manual",
+            "value": "read the explain payload for the check you picked"
+          },
+          "glossary_terms": [
+            "false_positive"
+          ]
+        }
+      ],
+      "uses_live_data": true
+    },
+    {
+      "id": "understand-a-threat-finding",
+      "title": "Read a threat finding like an analyst",
+      "summary": "Walk through how a detector actually decides something is worth flagging, using its real numbers, not just its label.",
+      "difficulty": "intermediate",
+      "estimated_minutes": 10,
+      "prerequisites": [
+        "spot-unencrypted-traffic"
+      ],
+      "objectives": [
+        "Distinguish severity from confidence on a threat finding",
+        "Read a detector's worked reasoning and check it against the raw evidence",
+        "Explain, in your own words, one detector's documented false-positive case"
+      ],
+      "steps": [
+        {
+          "order": 1,
+          "instruction": "Open the Threats view. If nothing has fired, that's expected on a quiet network.",
+          "explanation": "No findings does not mean no capability -- some detectors are inert on this tool today for documented reasons (the DNS-payload detectors, for instance), and c2_beaconing specifically disables itself on the polling capture tier.",
+          "check": {
+            "kind": "view_visited",
+            "value": "threats"
+          },
+          "glossary_terms": [
+            "false_positive"
+          ]
+        },
+        {
+          "order": 2,
+          "instruction": "If a threat exists, open it and read severity, confidence, and the evidence list separately.",
+          "explanation": "Severity is how bad this class of problem would be if real. Confidence is how sure the detector is that the pattern genuinely matches. They are independent -- a high-severity, low-confidence finding is a plausible lead, not a confirmed problem.",
+          "check": {
+            "kind": "manual",
+            "value": "identify the severity and confidence on one threat, or on a synthetic example from /api/explain"
+          },
+          "glossary_terms": [
+            "false_positive"
+          ]
+        },
+        {
+          "order": 3,
+          "instruction": "Call GET /api/explain/detector/{id} for that detector.",
+          "explanation": "Read how_it_decides and the worked_example together, then compare the numbers there against the evidence on the actual finding -- the explanation should let you verify the math yourself, not just trust the label.",
+          "check": {
+            "kind": "manual",
+            "value": "reproduce the detector's threshold arithmetic against its worked example"
+          },
+          "glossary_terms": [
+            "mitre_attack"
+          ]
+        }
+      ],
+      "uses_live_data": true
+    },
+    {
+      "id": "recognise-arp-and-local-mitm-risk",
+      "title": "ARP, spoofing, and why your local network is trusted more than it should be",
+      "summary": "Understand why ARP has no authentication, what that enables an attacker to do, and how NetAudit watches for it.",
+      "difficulty": "intermediate",
+      "estimated_minutes": 8,
+      "prerequisites": [
+        "read-your-security-score"
+      ],
+      "objectives": [
+        "Explain why ARP spoofing works, in terms of what ARP actually does and doesn't check",
+        "Name two other man-in-the-middle techniques that rely on the same lack of authentication",
+        "Explain why an attacker would specifically target the gateway's address"
+      ],
+      "steps": [
+        {
+          "order": 1,
+          "instruction": "Read the glossary entries for arp, arp_spoofing, mitm, and gateway in order.",
+          "explanation": "ARP's design -- 'who has this IP, I do, here's my MAC' -- has no step that checks whether the answer is true. Anything on the segment can answer for any address, including the gateway's.",
+          "check": {
+            "kind": "manual",
+            "value": "read arp, arp_spoofing, mitm, gateway from /api/glossary"
+          },
+          "glossary_terms": [
+            "arp",
+            "arp_spoofing",
+            "mitm",
+            "gateway"
+          ]
+        },
+        {
+          "order": 2,
+          "instruction": "Call GET /api/explain/detector/arp_spoofing.",
+          "explanation": "Notice it watches for two separate shapes: one MAC claiming several IPs, and (specifically flagged as more severe) the gateway's own MAC changing -- because controlling the gateway means seeing nearly all of a device's outbound traffic.",
+          "check": {
+            "kind": "manual",
+            "value": "read the arp_spoofing detector explanation"
+          },
+          "glossary_terms": [
+            "arp_spoofing"
+          ]
+        },
+        {
+          "order": 3,
+          "instruction": "Read the wpad_disabled and llmnr_disabled posture checks' explanations.",
+          "explanation": "Both are different roads to the same destination as ARP spoofing: getting this machine to trust something on the network it shouldn't. Notice each check names a real cost to fixing it, not just the risk of leaving it as-is.",
+          "check": {
+            "kind": "manual",
+            "value": "compare wpad_disabled and llmnr_disabled"
+          },
+          "glossary_terms": [
+            "wpad",
+            "llmnr"
+          ]
+        }
+      ],
+      "uses_live_data": false
+    },
+    {
+      "id": "prioritise-what-to-fix-first",
+      "title": "What should I actually fix first?",
+      "summary": "Use the prioritised findings list to turn everything the tool found into one ordered, defensible list of next actions.",
+      "difficulty": "intermediate",
+      "estimated_minutes": 7,
+      "prerequisites": [
+        "understand-a-threat-finding",
+        "recognise-arp-and-local-mitm-risk"
+      ],
+      "objectives": [
+        "Explain what impact_score combines, beyond raw severity",
+        "Find the single top-ranked item on this machine and explain why it outranks the second",
+        "Distinguish a posture fail, a hygiene recommendation, and a threat as three different kinds of finding"
+      ],
+      "steps": [
+        {
+          "order": 1,
+          "instruction": "Call GET /api/findings/prioritised.",
+          "explanation": "This merges posture fails/warns, hygiene recommendations, and active threats into one ranked list -- the single most useful answer to 'what's actually wrong here and in what order should I deal with it'.",
+          "check": {
+            "kind": "manual",
+            "value": "fetch and read /api/findings/prioritised"
+          },
+          "glossary_terms": []
+        },
+        {
+          "order": 2,
+          "instruction": "Look at the top-ranked item's why_first field.",
+          "explanation": "It should reference a real, specific reason -- severity, effort, and (for a documented set of findings) whether it's a well-known credential-free attack path -- not just restate the severity label back at you.",
+          "check": {
+            "kind": "manual",
+            "value": "read the top item's why_first"
+          },
+          "glossary_terms": []
+        },
+        {
+          "order": 3,
+          "instruction": "Compare two items with the same severity but different effort or source.",
+          "explanation": "A high-severity fix that's a single command should generally outrank an equally severe one that needs several manual steps or physical access -- that's the 'favour low effort' half of the ranking, not just severity sorted alone.",
+          "check": {
+            "kind": "manual",
+            "value": "compare impact_score across two same-severity items"
+          },
+          "glossary_terms": []
+        }
+      ],
+      "uses_live_data": true
+    },
+    {
+      "id": "capture-tiers-and-detector-limits",
+      "title": "Why some detectors show nothing, and why that's honest",
+      "summary": "Understand the three capture tiers, and read exactly which detectors are limited or inert because of what the capture layer can and can't see.",
+      "difficulty": "advanced",
+      "estimated_minutes": 10,
+      "prerequisites": [
+        "prioritise-what-to-fix-first"
+      ],
+      "objectives": [
+        "Name the three capture tiers and what each one actually captures",
+        "Explain, specifically, why c2_beaconing disables itself on the polling tier",
+        "Explain why the DNS-payload detectors are inert on live traffic, and what would change that"
+      ],
+      "steps": [
+        {
+          "order": 1,
+          "instruction": "Open the Overview and read the capture tier banner.",
+          "explanation": "npcap (full packet headers, needs the Npcap driver and admin) versus rawsocket (IPv4 headers only, admin but no Npcap) versus polling (connection-table deltas from psutil, no elevation needed, no per-packet detail at all) are three genuinely different amounts of visibility, not three cosmetic settings.",
+          "check": {
+            "kind": "view_visited",
+            "value": "overview"
+          },
+          "glossary_terms": [
+            "pcap",
+            "promiscuous_mode"
+          ]
+        },
+        {
+          "order": 2,
+          "instruction": "Call GET /api/explain/detector/c2_beaconing and read what_would_make_it_wrong.",
+          "explanation": "On the polling tier, a connection sampled on a fixed interval looks perfectly regular no matter what it actually is -- the timing signal this detector needs becomes meaningless, which is why it switches itself off there rather than producing confident nonsense.",
+          "check": {
+            "kind": "manual",
+            "value": "read c2_beaconing's explanation, specifically the capture-tier limitation"
+          },
+          "glossary_terms": [
+            "c2",
+            "beaconing",
+            "baseline"
+          ]
+        },
+        {
+          "order": 3,
+          "instruction": "Call GET /api/explain/detector/dns_tunneling and GET /api/explain/detector/dga_domains.",
+          "explanation": "Both need the actual DNS query name from the packet payload, which this tool's capture layer does not currently parse out of live traffic -- both are fully implemented and tested against synthetic data, and both will start working the moment a DNS payload parser exists, not before.",
+          "check": {
+            "kind": "manual",
+            "value": "read both DNS detector explanations and compare their limitation to c2_beaconing's"
+          },
+          "glossary_terms": [
+            "dns",
+            "dns_tunneling",
+            "dga"
+          ]
+        }
+      ],
+      "uses_live_data": false
+    }
+  ]
+}

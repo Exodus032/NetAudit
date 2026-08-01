@@ -84,14 +84,17 @@ function isNetworkError(err: unknown): boolean {
   return err instanceof TypeError || err instanceof BootstrapError;
 }
 
-async function fetchWithToken(path: string, init?: RequestInit): Promise<Response> {
+// Exported so the Part D/E/F client modules (clientLearn.ts, clientPro.ts)
+// can reuse the exact same token/retry/fallback behaviour instead of each
+// growing its own copy. Nothing outside src/api should call these directly.
+export async function fetchWithToken(path: string, init?: RequestInit): Promise<Response> {
   const token = await ensureToken();
   const headers = new Headers(init?.headers);
   if (token) headers.set("X-NetAudit-Token", token);
   return fetch(path, { ...init, headers });
 }
 
-async function realFetch<T>(path: string, init?: RequestInit): Promise<T> {
+export async function realFetch<T>(path: string, init?: RequestInit): Promise<T> {
   let res = await fetchWithToken(path, init);
   if (res.status === 401) {
     // Token may have expired or the backend restarted with a new one — drop
@@ -113,7 +116,7 @@ async function realFetch<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 /** Try the real backend; on network failure, flip to mock mode and retry via the mock fn. */
-async function withFallback<T>(path: string, init: RequestInit | undefined, mockFn: () => Promise<T>): Promise<T> {
+export async function withFallback<T>(path: string, init: RequestInit | undefined, mockFn: () => Promise<T>): Promise<T> {
   if (FORCE_MOCKS) return mockFn();
   try {
     const result = await realFetch<T>(path, init);
@@ -129,7 +132,7 @@ async function withFallback<T>(path: string, init: RequestInit | undefined, mock
   }
 }
 
-function qs(params: Record<string, string | number | boolean | undefined>): string {
+export function qs(params: Record<string, string | number | boolean | undefined>): string {
   const usp = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
     if (v !== undefined && v !== "") usp.set(k, String(v));

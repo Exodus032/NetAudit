@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { Recommendation } from "../../api/types";
 import { SeverityBadge, CategoryChip } from "../../components/common/Badge";
 import { ActionItem } from "./ActionItem";
+import { ExplainChip } from "../../components/learn/ExplainChip";
 import { formatDateTime, formatNumber, formatPercent } from "../../lib/format";
 import "./RecommendationCard.css";
 
@@ -10,11 +11,13 @@ export function RecommendationCard({
   onDismiss,
   onRestore,
   highlight,
+  isFirst,
 }: {
   rec: Recommendation;
   onDismiss: (id: string) => void;
   onRestore: (id: string) => void;
   highlight: boolean;
+  isFirst?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
 
@@ -33,14 +36,20 @@ export function RecommendationCard({
       <div className="rec-card-header">
         <SeverityBadge severity={rec.severity} />
         <CategoryChip category={rec.category} />
-        <span className="rec-confidence">confidence {formatPercent(rec.confidence)}</span>
+        <span className="rec-confidence">
+          confidence {formatPercent(rec.confidence)}
+          <ExplainChip kind="metric" id="confidence" label="Confidence" />
+        </span>
         <div className="rec-card-spacer" />
         <button className="rec-dismiss-btn" onClick={handleToggle} disabled={busy}>
           {rec.dismissed ? "Restore" : "Dismiss"}
         </button>
       </div>
 
-      <h3 className="rec-title">{rec.title}</h3>
+      <h3 className="rec-title">
+        {rec.title}
+        <ExplainChip kind="rule" id={rec.rule_id} label={rec.title} />
+      </h3>
       <p className="rec-summary">{rec.summary}</p>
       <p className="rec-detail">{rec.detail}</p>
 
@@ -58,7 +67,7 @@ export function RecommendationCard({
       )}
 
       {rec.actions.length > 0 && (
-        <ul className="rec-actions">
+        <ul className="rec-actions" {...(isFirst ? { "data-tour": "recommendation-actions" } : {})}>
           {rec.actions.map((a, i) => (
             <ActionItem key={i} action={a} />
           ))}

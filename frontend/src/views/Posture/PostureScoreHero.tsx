@@ -37,7 +37,7 @@ export function PostureScoreHero({
   generatedAt: string;
 }) {
   return (
-    <div className="posture-hero">
+    <div className="posture-hero" data-tour="posture-score">
       <div className="posture-hero-score">
         <div className="posture-hero-figure" style={{ color: gradeColor(grade) }}>
           {score}

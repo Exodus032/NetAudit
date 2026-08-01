@@ -1,0 +1,36 @@
+.lanscan-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lanscan-status-pill {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.lanscan-status-running {
+  color: var(--series-1);
+  border-color: var(--series-1);
+}
+.lanscan-status-completed {
+  color: var(--status-good);
+  border-color: var(--status-good);
+}
+.lanscan-status-error {
+  color: var(--status-critical);
+  border-color: var(--status-critical);
+}
+.lanscan-status-cancelled {
+  color: var(--status-warning);
+  border-color: var(--status-warning);
+}
+
+.lanscan-results {
+  margin-top: 14px;
+}

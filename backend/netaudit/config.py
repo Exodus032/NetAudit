@@ -19,9 +19,18 @@ VERSION = "1.0.0"
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("NETAUDIT_PORT", "8787"))
 
+# The two Vite dev-server origins, plus our own. The last pair matters in
+# the shipped configuration: when the backend serves the built SPA itself,
+# the page's origin is this host and port, and leaving it out means the app
+# is refused its own /ws/live upgrade (403 on the handshake) and shows
+# "Reconnecting" forever while REST still works. Same-origin by definition,
+# so this widens nothing. Built from PORT because PORT is settable via
+# NETAUDIT_PORT.
 CORS_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    f"http://127.0.0.1:{PORT}",
+    f"http://localhost:{PORT}",
 ]
 
 # Backend directory (…/backend), used to locate the built frontend.

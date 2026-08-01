@@ -1,0 +1,81 @@
+.baselines-capture {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.baselines-label-input {
+  flex: 1 1 260px;
+}
+
+.baselines-diff {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.baselines-diff-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  flex-wrap: wrap;
+}
+
+.baselines-score-row {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 0;
+}
+
+.baseline-delta-up {
+  color: var(--status-good);
+  font-weight: 700;
+}
+.baseline-delta-down {
+  color: var(--status-critical);
+  font-weight: 700;
+}
+
+.baselines-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.baselines-diff-group {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+}
+.baselines-diff-group-good {
+  border-color: color-mix(in srgb, var(--status-good) 40%, var(--border));
+}
+.baselines-diff-group-bad {
+  border-color: color-mix(in srgb, var(--status-critical) 40%, var(--border));
+}
+
+.baselines-diff-group-title {
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.baselines-diff-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.baselines-unchanged {
+  grid-column: 1 / -1;
+}

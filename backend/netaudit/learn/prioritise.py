@@ -29,6 +29,9 @@ Each item passed to `rank()` is a plain dict with:
   remediation shape (one command vs. several, admin-only vs. not,
   hardware/physical-access requirements).
 - `one_line_fix` (str, optional) -- short human fix description.
+- `observed` (str, optional) -- what is actually true right now. Passed
+  straight through, never parsed or scored. Exists because posture titles
+  state the desired end state, which inverts in a list of failures.
 - `deep_link_view` (str, optional) -- defaults from `source`.
 
 ## The formula
@@ -159,6 +162,15 @@ class RankedItem(TypedDict):
     id: str
     source: str
     title: str
+    # What is actually true right now, when the source can say. Posture
+    # check titles state the desired end state ("SMB signing is required",
+    # "Default inbound action is Block"), which reads correctly next to a
+    # pass/fail badge but reads backwards in a list where every entry is by
+    # definition a failure -- a student sees a headline asserting the thing
+    # is fine, filed under "fix this first". `observed` is the honest
+    # counterweight: "Default inbound action is not Block on: Domain,
+    # Private, Public".
+    observed: Optional[str]
     severity: str
     impact_score: int
     effort: str
@@ -246,6 +258,7 @@ def rank(items: list[dict]) -> list[RankedItem]:
                 id=f"{item['source']}:{item['id']}",
                 source=item["source"],
                 title=item["title"],
+                observed=item.get("observed") or None,
                 severity=item["severity"],
                 impact_score=score,
                 effort=item.get("effort", "medium"),

@@ -1,0 +1,40 @@
+.explain-chip-wrap {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+.explain-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 4px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.explain-chip:hover,
+.explain-chip:focus-visible {
+  color: var(--text-primary);
+  border-color: var(--series-1);
+  background: color-mix(in srgb, var(--series-1) 16%, var(--surface-2));
+}
+
+.explain-chip:focus-visible {
+  outline: 2px solid var(--series-1);
+  outline-offset: 2px;
+}
+
+.explain-chip[aria-expanded="true"] {
+  color: var(--series-1);
+  border-color: var(--series-1);
+}

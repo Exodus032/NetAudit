@@ -16,7 +16,7 @@ export function SecurityScoreTile({ onOpenPosture }: { onOpenPosture: () => void
   if (error) return null; // non-critical widget on this view; don't block Overview on it
 
   return (
-    <button className="security-score-tile" onClick={onOpenPosture}>
+    <button className="security-score-tile" data-tour="security-score" onClick={onOpenPosture}>
       <div className="security-score-tile-figure" style={{ color: data ? scoreColor(data.overall) : undefined }}>
         {loading && !data ? "—" : data?.overall}
         {data && <span className="security-score-tile-grade">{data.grade}</span>}

@@ -507,6 +507,11 @@ class LiveFindingsProvider:
             out.append({
                 "id": check.id,
                 "title": check.title,
+                # Posture titles state the desired end state, so on their
+                # own they read backwards in a list of things to fix.
+                # `observed` is the check's own description of what is
+                # actually true, which is what the student needs to see.
+                "observed": getattr(check, "observed", None),
                 "severity": getattr(check.severity, "value", check.severity),
                 "status": status,
                 "one_line_fix": getattr(remediation, "summary", None) or "See the check detail for remediation steps.",

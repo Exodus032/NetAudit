@@ -436,6 +436,19 @@ class TestWiredApp:
         ranks = [i["priority_rank"] for i in body["items"]]
         assert ranks == sorted(ranks), "items must arrive already ranked"
 
+    def test_prioritised_posture_findings_say_what_is_actually_wrong(self, client):
+        """A posture title states the desired end state ("Default inbound
+        action is Block"). In a list where every entry is a failure that
+        reads as a claim the thing is fine, so each posture item has to
+        carry the check's own `observed` text alongside it."""
+        items = client.get("/api/findings/prioritised").json()["items"]
+        posture_items = [i for i in items if i["source"] == "posture"]
+        assert posture_items, "this machine should have at least one failing check"
+        with_observed = [i for i in posture_items if i.get("observed")]
+        assert with_observed, "posture findings must carry the observed state"
+        for item in with_observed:
+            assert item["observed"] != item["title"]
+
     def test_explain_covers_a_real_detector(self, client):
         body = client.get("/api/explain/detector/c2_beaconing").json()
         assert body["id"] == "c2_beaconing"
