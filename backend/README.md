@@ -5,12 +5,11 @@ FastAPI service implementing `docs/API_CONTRACT.md`. Serves on
 
 ## Setup
 
+From the repo root:
+
 ```powershell
-cd backend
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-python -m netaudit.server
+uv sync --project backend
+uv run --directory backend -m netaudit.server
 ```
 
 The server starts capture automatically on launch, using whatever tier your

@@ -72,6 +72,14 @@ a banner telling you what you're missing.
 
 ### Windows
 
+Requires uv and Node.js 20+ with npm. If uv is missing, install it first:
+
+```powershell
+irm https://astral.sh/uv/install.ps1 | iex
+```
+
+Then launch everything with:
+
 ```powershell
 .\start.ps1
 ```

@@ -323,10 +323,9 @@ this doesn't weaken the browser-facing protection.
 
 ### 12. Dependency hygiene
 
-`requirements.txt` pins every dependency with `==` to what's actually
-installed in this venv, each with a one-line comment on why it's there.
-Installed versions (`pip freeze` in `backend/.venv`), which the file is
-now pinned to:
+`backend/pyproject.toml` pins every dependency with `==`, and `uv.lock`
+locks the full dependency graph to exact resolved versions. Pinned
+versions:
 
 | Package | Version |
 |---|---|

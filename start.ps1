@@ -58,7 +58,14 @@ Write-Step 'Preparing backend'
 
 if (-not (Test-Path $backend)) { throw "backend/ not found at $backend" }
 
-$uv = (Get-Command uv -ErrorAction Stop).Source
+$uvCmd = Get-Command uv -ErrorAction SilentlyContinue
+if (-not $uvCmd) {
+    Write-Host "`nuv is required but was not found on PATH." -ForegroundColor Red
+    Write-Host 'Install it with:   irm https://astral.sh/uv/install.ps1 | iex'
+    Write-Host '            or:   winget install astral-sh.uv'
+    exit 1
+}
+$uv = $uvCmd.Source
 
 if (-not $SkipInstall) {
     Write-Host '    syncing python dependencies with uv...'
@@ -71,6 +78,14 @@ Write-Ok 'Backend ready'
 Write-Step 'Preparing frontend'
 
 if (-not (Test-Path $frontend)) { throw "frontend/ not found at $frontend" }
+
+$npmCmd = Get-Command npm -ErrorAction SilentlyContinue
+if (-not $npmCmd) {
+    Write-Host "`nnpm is required but was not found on PATH." -ForegroundColor Red
+    Write-Host 'Install Node.js 20+ (which includes npm) from https://nodejs.org'
+    Write-Host '            or:   winget install OpenJS.NodeJS.LTS'
+    exit 1
+}
 
 if (-not $SkipInstall -and -not (Test-Path (Join-Path $frontend 'node_modules'))) {
     Write-Host '    installing node dependencies...'
@@ -120,7 +135,7 @@ if ($Lan) {
 
 $frontendProc = $null
 if (-not $Prod) {
-    $npm = (Get-Command npm).Source
+    $npm = $npmCmd.Source
     $frontendProc = Start-Process -FilePath $npm -ArgumentList 'run','dev' `
         -WorkingDirectory $frontend -PassThru
     Write-Ok "Frontend pid $($frontendProc.Id) -> http://localhost:5173"
@@ -130,9 +145,16 @@ $url = if ($Lan) { $lanUrl } elseif ($Prod) { 'http://127.0.0.1:8787' } else { '
 
 Write-Host "`n    waiting for the API to come up..."
 $ready = $false
+# The API requires the X-NetAudit-Token header on every request; the backend
+# writes the token to %LOCALAPPDATA%\NetAudit\token on startup, so keep
+# polling until both the token file and the API are up.
+$tokenPath = Join-Path $env:LOCALAPPDATA 'NetAudit\token'
 foreach ($i in 1..30) {
     try {
-        $r = Invoke-RestMethod -Uri 'http://127.0.0.1:8787/api/health' -TimeoutSec 2
+        if (-not (Test-Path $tokenPath)) { throw 'token not written yet' }
+        $token = (Get-Content $tokenPath -Raw).Trim()
+        $r = Invoke-RestMethod -Uri 'http://127.0.0.1:8787/api/health' -TimeoutSec 2 `
+            -Headers @{ 'X-NetAudit-Token' = $token }
         $ready = $true
         Write-Ok "API healthy - capture mode: $($r.capture.mode), elevated: $($r.capture.elevated)"
         if ($r.capture.degraded_reason) { Write-Warn $r.capture.degraded_reason }

@@ -32,7 +32,9 @@ def test_backend_is_a_locked_uv_project():
 def test_windows_launcher_syncs_and_runs_the_backend_with_uv():
     launcher = (ROOT / "start.ps1").read_text(encoding="utf-8")
 
-    assert "Get-Command uv -ErrorAction Stop" in launcher
+    assert "Get-Command uv -ErrorAction SilentlyContinue" in launcher
+    assert "irm https://astral.sh/uv/install.ps1 | iex" in launcher
+    assert "Get-Command npm -ErrorAction SilentlyContinue" in launcher
     assert "& $uv sync --project $backend" in launcher
     assert "'run', '--directory', $backend, '--no-sync', '-m', 'netaudit.server'" in launcher
     assert "pip install" not in launcher
