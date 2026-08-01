@@ -149,6 +149,107 @@ class TestBootstrap:
         assert r.status_code == 200  # no X-NetAudit-Token header sent at all
 
 
+# --- LAN sharing mode (--unsafe-bind + --allow-lan-bootstrap) -----------------
+
+LAN_HOST = "192.168.1.10:8787"
+LAN_ORIGIN = f"http://{LAN_HOST}"
+LAN_PEER = ("192.168.1.50", 51500)
+
+
+@pytest.fixture
+def lan_app_client(tmp_path):
+    """App as launched by `server.main(["--unsafe-bind", "0.0.0.0",
+    "--allow-lan-bootstrap"])`: both LAN flags on app.state (mirroring the
+    assignments in server.main), a non-loopback peer, and the dashboard
+    served from the machine's LAN address (base_url sets the Host header)."""
+    db_path = tmp_path / "lan.db"
+    token_path = tmp_path / "token"
+    app = create_app(db_path=db_path, token_path=token_path, autostart_capture=False)
+    app.state.allow_lan_bootstrap = True
+    app.state.lan_mode = True
+    with TestClient(app, client=LAN_PEER, base_url=LAN_ORIGIN) as client:
+        yield client, app, db_path
+    dbmod.reset_for_tests(db_path)
+
+
+class TestLanBootstrap:
+    def test_lan_bootstrap_without_sec_fetch_site_succeeds(self, lan_app_client):
+        # Browsers only send Sec-Fetch-Site from secure contexts (https or
+        # localhost); over plain http to a LAN IP the header is absent, so
+        # its absence must not reject the request when LAN mode is on.
+        client, app, _ = lan_app_client
+        r = client.get("/api/bootstrap")
+        assert r.status_code == 200
+        assert r.json()["token"] == app.state.token
+
+    def test_lan_bootstrap_with_same_origin_sec_fetch_site_succeeds(self, lan_app_client):
+        client, app, _ = lan_app_client
+        r = client.get("/api/bootstrap", headers={"Sec-Fetch-Site": "same-origin"})
+        assert r.status_code == 200
+
+    def test_lan_bootstrap_with_own_origin_succeeds(self, lan_app_client):
+        # Origin == http://<Host header> is the dashboard's own origin.
+        client, app, _ = lan_app_client
+        r = client.get("/api/bootstrap", headers={"Origin": LAN_ORIGIN})
+        assert r.status_code == 200
+
+    def test_lan_bootstrap_cross_site_sec_fetch_site_still_403(self, lan_app_client):
+        client, app, _ = lan_app_client
+        r = client.get("/api/bootstrap", headers={"Sec-Fetch-Site": "cross-site"})
+        assert r.status_code == 403
+
+    def test_lan_bootstrap_foreign_origin_still_403(self, lan_app_client):
+        client, app, _ = lan_app_client
+        r = client.get("/api/bootstrap", headers={"Origin": "http://evil.example"})
+        assert r.status_code == 403
+
+    def test_lan_bootstrap_403_without_the_flag(self, tmp_path):
+        # Same LAN request, but the server was not started with
+        # --allow-lan-bootstrap: default loopback-only behavior applies.
+        db_path = tmp_path / "nolan.db"
+        token_path = tmp_path / "token"
+        app = create_app(db_path=db_path, token_path=token_path, autostart_capture=False)
+        with TestClient(app, client=LAN_PEER, base_url=LAN_ORIGIN) as client:
+            assert client.get("/api/bootstrap").status_code == 403
+            r = client.get("/api/bootstrap", headers={"Sec-Fetch-Site": "same-origin"})
+            assert r.status_code == 403
+        dbmod.reset_for_tests(db_path)
+
+
+class TestLanWebSocketOrigin:
+    def test_own_origin_accepted_in_lan_mode(self, lan_app_client):
+        # websocket_connect ignores base_url (always ws://testserver), so
+        # the LAN Host header has to be set explicitly here.
+        client, app, _ = lan_app_client
+        with client.websocket_connect(
+            f"/ws/live?token={app.state.token}",
+            headers={"Origin": LAN_ORIGIN, "Host": LAN_HOST},
+        ) as ws:
+            msg = ws.receive_json()
+            assert "type" in msg
+
+    def test_foreign_origin_still_rejected_in_lan_mode(self, lan_app_client):
+        client, app, _ = lan_app_client
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            with client.websocket_connect(
+                f"/ws/live?token={app.state.token}", headers={"Origin": "http://evil.example"},
+            ):
+                pass
+        assert exc_info.value.code == 1008
+
+    def test_own_origin_rejected_without_lan_mode(self, app_client):
+        """Default launches never set lan_mode, so an Origin merely matching
+        the Host header stays rejected -- the dynamic same-origin acceptance
+        is strictly opt-in via --unsafe-bind."""
+        client, app, _ = app_client
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            with client.websocket_connect(
+                f"/ws/live?token={app.state.token}", headers={"Origin": "http://testserver"},
+            ):
+                pass
+        assert exc_info.value.code == 1008
+
+
 # --- item 11: websocket origin check -----------------------------------------
 
 class TestWebSocketOrigin:

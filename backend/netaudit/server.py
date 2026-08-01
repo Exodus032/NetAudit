@@ -205,6 +205,10 @@ def main(argv=None) -> None:
     # Kept on app state rather than in config so the secure, loopback-only
     # default remains unchanged for imports, tests, and normal launches.
     app.state.allow_lan_bootstrap = args.allow_lan_bootstrap
+    # lan_mode marks any non-loopback bind: the websocket origin check uses
+    # it to additionally accept the request's own origin (see
+    # SecurityMiddleware._handle_websocket).
+    app.state.lan_mode = args.unsafe_bind is not None
     uvicorn.run(app, host=host, port=config.PORT, log_level="info")
 
 

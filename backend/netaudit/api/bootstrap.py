@@ -34,12 +34,15 @@ def _is_same_origin_request(request: Request) -> bool:
 
     LAN sharing is deliberately opt-in at server launch. Once enabled, a
     browser loading the dashboard from this server is allowed to obtain its
-    in-memory API token, but a cross-site page cannot. A same-origin fetch
-    normally omits ``Origin`` for a GET, so require its Fetch Metadata signal
-    and, when an Origin is present, require an exact match for the request's
-    Host header.
+    in-memory API token, but a cross-site page cannot. Browsers only send
+    ``Sec-Fetch-Site`` from secure contexts (https or localhost), so over
+    plain http to a LAN address the header is absent entirely -- treat a
+    missing header as acceptable, but when it *is* present require it to be
+    ``same-origin``. When an ``Origin`` is present, require an exact match
+    for the request's Host header.
     """
-    if request.headers.get("sec-fetch-site") != "same-origin":
+    sec_fetch_site = request.headers.get("sec-fetch-site")
+    if sec_fetch_site is not None and sec_fetch_site != "same-origin":
         return False
     origin = request.headers.get("origin")
     host = request.headers.get("host")
@@ -61,7 +64,12 @@ def get_bootstrap(request: Request):
 
     origin = request.headers.get("origin")
     if origin is not None and origin not in config.CORS_ORIGINS:
-        raise _forbidden("Origin is not in the allowlist.")
+        # In LAN sharing mode the dashboard's own origin is http://<host>,
+        # which can never be in the static allowlist; accept exactly that.
+        lan_enabled = getattr(request.app.state, "allow_lan_bootstrap", False)
+        host = request.headers.get("host")
+        if not (lan_enabled and host is not None and origin == f"http://{host}"):
+            raise _forbidden("Origin is not in the allowlist.")
 
     pipeline = request.app.state.pipeline
     return {

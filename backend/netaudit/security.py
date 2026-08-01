@@ -219,8 +219,17 @@ class SecurityMiddleware:
 
         origin = headers.get("origin")
         if origin is not None and origin not in config.CORS_ORIGINS:
-            await send({"type": "websocket.close", "code": 1008})
-            return
+            # In LAN sharing mode (--unsafe-bind) the dashboard is loaded
+            # from http://<lan-ip>:<port>, an origin that can never be in
+            # the static allowlist. Accept exactly the request's own origin
+            # (Origin == http://<Host header>); foreign origins still close
+            # with 1008. Default loopback-only launches never set lan_mode,
+            # so their behavior is unchanged.
+            lan_mode = getattr(app_state, "lan_mode", False)
+            host = headers.get("host")
+            if not (lan_mode and host is not None and origin == f"http://{host}"):
+                await send({"type": "websocket.close", "code": 1008})
+                return
 
         token = _extract_token(headers, scope.get("query_string", b""))
         expected = getattr(app_state, "token", None)
