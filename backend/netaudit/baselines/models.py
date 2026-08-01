@@ -2,7 +2,7 @@
 (baseline snapshots and diff)."""
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -25,9 +25,9 @@ class BaselineRef(BaseModel):
     label: str
     captured_at: str
 
-
 class BaselineListItem(BaselineRef):
     model_config = _model()
+    origin: Literal["manual", "scheduled"] = "manual"
     checks_count: int
     peers_count: int
     listeners_count: int
@@ -40,6 +40,21 @@ class BaselinesResponse(BaseModel):
     model_config = _model()
     baselines: list[BaselineListItem] = Field(default_factory=list)
 
+
+
+class BaselineScheduleUpdateRequest(BaseModel):
+    model_config = _model()
+    enabled: bool
+    interval_hours: Literal[6, 12, 24, 48, 168]
+
+
+class BaselineScheduleResponse(BaseModel):
+    model_config = _model()
+    enabled: bool
+    interval_hours: Literal[6, 12, 24, 48, 168]
+    last_succeeded_at: Optional[str] = None
+    last_error: Optional[str] = None
+    next_due_at: Optional[str] = None
 
 class ScoreDelta(BaseModel):
     model_config = _model()

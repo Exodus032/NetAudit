@@ -17,6 +17,7 @@ import type {
   AlertTestResult,
   BaselineDiff,
   BaselineListItem,
+  BaselineSchedule,
   BaselinesResponse,
   CaptureFilterState,
   CaptureSession,
@@ -100,6 +101,13 @@ const proState = {
   scanTimer: null as ReturnType<typeof setInterval> | null,
   baselines: [] as StoredBaseline[],
   baselineSeq: 1,
+  baselineSchedule: {
+    enabled: false,
+    interval_hours: 24,
+    last_succeeded_at: null,
+    next_due_at: null,
+    last_error: null,
+  } as BaselineSchedule,
   alertsConfig: {
     enabled: false,
     min_severity: "high",
@@ -786,6 +794,7 @@ export function mockCreateBaseline(label: string): Promise<BaselineListItem> {
     id,
     label,
     captured_at: isoNow(),
+    origin: "manual",
     checks_count: Object.keys(checkStatuses).length,
     peers_count: peers.length,
     listeners_count: listeners.length,
@@ -800,6 +809,19 @@ export function mockCreateBaseline(label: string): Promise<BaselineListItem> {
   const { checkStatuses: _cs, peers: _p, listeners: _l, ...listItem } = item;
   void _cs; void _p; void _l;
   return delay(listItem);
+}
+
+export function mockGetBaselineSchedule(): Promise<BaselineSchedule> {
+  return delay({ ...proState.baselineSchedule });
+}
+
+export function mockUpdateBaselineSchedule(schedule: Pick<BaselineSchedule, "enabled" | "interval_hours">): Promise<BaselineSchedule> {
+  proState.baselineSchedule = {
+    ...proState.baselineSchedule,
+    enabled: schedule.enabled,
+    interval_hours: schedule.interval_hours,
+  };
+  return delay({ ...proState.baselineSchedule });
 }
 
 export function mockListBaselines(): Promise<BaselinesResponse> {

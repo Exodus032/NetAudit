@@ -1,8 +1,15 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
-from .models import BaselineCreateRequest, BaselineDiff, BaselineListItem, BaselinesResponse
+from .models import (
+    BaselineCreateRequest,
+    BaselineDiff,
+    BaselineListItem,
+    BaselineScheduleResponse,
+    BaselineScheduleUpdateRequest,
+    BaselinesResponse,
+)
 from .providers import (
     PostureProvider,
     ScoreProvider,
@@ -11,9 +18,14 @@ from .providers import (
     get_score_provider,
     get_traffic_provider,
 )
+from .monitor import BaselineMonitor
 from .service import BaselineService, get_baseline_service
 
 router = APIRouter()
+
+
+def get_baseline_monitor(request: Request) -> BaselineMonitor:
+    return request.app.state.baseline_monitor
 
 
 @router.post("/api/baselines", response_model=BaselineListItem)
@@ -32,6 +44,22 @@ def create_baseline(
 @router.get("/api/baselines", response_model=BaselinesResponse)
 def list_baselines_endpoint(service: BaselineService = Depends(get_baseline_service)) -> BaselinesResponse:
     return service.list()
+
+
+@router.get("/api/baselines/schedule", response_model=BaselineScheduleResponse)
+def get_schedule_endpoint(service: BaselineService = Depends(get_baseline_service)) -> BaselineScheduleResponse:
+    return service.get_schedule()
+
+
+@router.put("/api/baselines/schedule", response_model=BaselineScheduleResponse)
+def update_schedule_endpoint(
+    body: BaselineScheduleUpdateRequest,
+    service: BaselineService = Depends(get_baseline_service),
+    monitor: BaselineMonitor = Depends(get_baseline_monitor),
+) -> BaselineScheduleResponse:
+    schedule = service.update_schedule(body.enabled, body.interval_hours)
+    monitor.wake()
+    return schedule
 
 
 @router.get("/api/baselines/{a}/diff/{b}", response_model=BaselineDiff)

@@ -11,18 +11,63 @@ from netaudit.baselines.providers import (
     get_score_provider,
     get_traffic_provider,
 )
-from netaudit.baselines.router import get_baseline_service, router
+from netaudit.baselines.router import get_baseline_monitor, get_baseline_service, router
 from netaudit.baselines.service import BaselineService
 
 
-def make_client(db_path, checks=None, peers=None, listeners=None, posture=50, threats=None, overall=None):
+class RecordingMonitor:
+    def __init__(self) -> None:
+        self.wake_count = 0
+
+    def wake(self) -> None:
+        self.wake_count += 1
+
+
+def make_client(db_path, checks=None, peers=None, listeners=None, posture=50, threats=None, overall=None, monitor=None):
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_posture_provider] = lambda: StaticPostureProvider(checks or [])
     app.dependency_overrides[get_traffic_provider] = lambda: StaticTrafficProvider(peers or [], listeners or [])
     app.dependency_overrides[get_score_provider] = lambda: StaticScoreProvider(posture, threats, overall)
     app.dependency_overrides[get_baseline_service] = lambda: BaselineService(db_path=db_path)
+    app.dependency_overrides[get_baseline_monitor] = lambda: monitor or RecordingMonitor()
     return TestClient(app)
+
+
+def test_get_schedule_returns_default_schedule_at_static_path(tmp_path):
+    client = make_client(tmp_path / "t.db")
+
+    response = client.get("/api/baselines/schedule")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "enabled": False,
+        "interval_hours": 24,
+        "last_succeeded_at": None,
+        "last_error": None,
+        "next_due_at": None,
+    }
+
+
+def test_put_schedule_persists_enabled_48_hour_schedule_and_wakes_monitor(tmp_path):
+    monitor = RecordingMonitor()
+    client = make_client(tmp_path / "t.db", monitor=monitor)
+
+    response = client.put("/api/baselines/schedule", json={"enabled": True, "interval_hours": 48})
+
+    assert response.status_code == 200
+    assert response.json()["enabled"] is True
+    assert response.json()["interval_hours"] == 48
+    assert monitor.wake_count == 1
+    assert client.get("/api/baselines/schedule").json()["interval_hours"] == 48
+
+
+def test_put_schedule_rejects_nonpreset_interval(tmp_path):
+    client = make_client(tmp_path / "t.db")
+
+    response = client.put("/api/baselines/schedule", json={"enabled": True, "interval_hours": 36})
+
+    assert response.status_code == 422
 
 
 def test_create_and_list(tmp_path):
