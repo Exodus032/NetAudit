@@ -747,13 +747,14 @@ class StoreTrafficProvider:
                 port = conn.laddr.port
                 if port in out:
                     continue
-                name = "unknown"
-                if conn.pid:
-                    try:
-                        name = psutil.Process(conn.pid).name()
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        name = "unknown"
-                out[port] = {"port": port, "process": name, "address": conn.laddr.ip}
+                from .capture.enrich import resolve_process
+
+                _pid, name, _path = resolve_process(conn.pid)
+                out[port] = {
+                    "port": port,
+                    "process": name or "unknown",
+                    "address": conn.laddr.ip,
+                }
         except (psutil.AccessDenied, OSError):
             logger.debug("listener enumeration denied", exc_info=True)
             return []

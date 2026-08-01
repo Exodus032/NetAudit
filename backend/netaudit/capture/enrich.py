@@ -47,6 +47,34 @@ def classify_external(addr: str) -> bool:
 
 # --- PID <-> local (proto, port) mapping ------------------------------------
 
+def resolve_process(pid: Optional[int]) -> tuple[Optional[int], Optional[str], Optional[str]]:
+    """Return `(pid, name, path)` for a connection's owning process, or a
+    triple of Nones when the connection cannot honestly be attributed.
+
+    Windows reports PID 0 for sockets it will not attribute to a userland
+    process: kernel-owned traffic, and anything the current token cannot
+    open. `psutil.Process(0).name()` cheerfully answers "System Idle
+    Process", so without this the UI ends up claiming the idle process
+    contacted an external host, which is both impossible and exactly the
+    kind of detail that makes a student mistrust everything else on the
+    screen. "We could not tell" is the truthful answer, and the frontend
+    already renders a missing process name as unattributed.
+
+    PID 4 ("System") is left alone: that one really is the kernel and it
+    really does own SMB and other traffic.
+    """
+    if pid is None or pid == 0:
+        return (None, None, None)
+    try:
+        proc = psutil.Process(pid)
+        return (pid, proc.name(), proc.exe())
+    except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+        return (pid, None, None)
+    except Exception:
+        return (pid, None, None)
+
+
+
 class ProcessTable:
     """Refreshable snapshot of psutil.net_connections(), keyed by
     (protocol, local_port), used to attribute raw packets (which have no
@@ -62,25 +90,16 @@ class ProcessTable:
             conns = psutil.net_connections(kind="inet")
         except (psutil.AccessDenied, PermissionError, OSError):
             conns = []
-        proc_cache: dict[int, tuple[Optional[str], Optional[str]]] = {}
+        proc_cache: dict[Optional[int], tuple[Optional[int], Optional[str], Optional[str]]] = {}
         for c in conns:
             if not c.laddr:
                 continue
             proto = "tcp" if c.type == socket.SOCK_STREAM else "udp"
-            pid = c.pid
-            name = path = None
-            if pid is not None:
-                if pid in proc_cache:
-                    name, path = proc_cache[pid]
-                else:
-                    try:
-                        p = psutil.Process(pid)
-                        name = p.name()
-                        path = p.exe()
-                    except (psutil.NoSuchProcess, psutil.AccessDenied, Exception):
-                        name = name or None
-                        path = None
-                    proc_cache[pid] = (name, path)
+            if c.pid in proc_cache:
+                pid, name, path = proc_cache[c.pid]
+            else:
+                pid, name, path = resolve_process(c.pid)
+                proc_cache[c.pid] = (pid, name, path)
             new_map[(proto, c.laddr.port)] = (pid, name, path)
         with self._lock:
             self._map = new_map

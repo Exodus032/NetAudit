@@ -13,6 +13,7 @@ import time
 import psutil
 
 from .. import config
+from . import enrich
 from .base import CaptureBackend, PacketEvent
 
 
@@ -71,14 +72,7 @@ class PollingBackend(CaptureBackend):
 
             for c in active:
                 proto = "tcp" if c.type == socket.SOCK_STREAM else "udp"
-                name = path = None
-                if c.pid is not None:
-                    try:
-                        p = psutil.Process(c.pid)
-                        name = p.name()
-                        path = p.exe()
-                    except Exception:
-                        pass
+                pid, name, path = enrich.resolve_process(c.pid)
                 event = PacketEvent(
                     ts=now,
                     protocol=proto,
@@ -89,7 +83,7 @@ class PollingBackend(CaptureBackend):
                     length=int(share_in + share_out),
                     bytes_in=int(share_in),
                     bytes_out=int(share_out),
-                    pid=c.pid,
+                    pid=pid,
                     process_name=name,
                     process_path=path,
                     state=c.status if proto == "tcp" else "ACTIVE",
