@@ -55,6 +55,7 @@ from .threat.router import router as threat_router
 from .threat.scoring import compute_threats_score
 from .threat.store import ThreatStore
 from .store import db as dbmod
+from .timeutil import now_iso
 
 logger = logging.getLogger("netaudit.integration")
 
@@ -874,7 +875,8 @@ def wire_pro(app, db_path: Optional[Path] = None) -> None:
     from .alerts.router import router as alerts_router
     from .alerts.service import AlertService, get_alert_service
     from .baselines import providers as baseline_providers
-    from .baselines.router import router as baselines_router
+    from .baselines.monitor import BaselineMonitor
+    from .baselines.router import get_baseline_monitor, router as baselines_router
     from .baselines.service import BaselineService, get_baseline_service
     from .compliance import providers as compliance_providers
     from .compliance.router import router as compliance_router
@@ -896,6 +898,14 @@ def wire_pro(app, db_path: Optional[Path] = None) -> None:
 
     alert_service = AlertService(db_path=db_path)
     baseline_service = BaselineService(db_path=db_path)
+    baseline_monitor = BaselineMonitor(
+        baseline_service,
+        posture_adapter,
+        traffic_provider,
+        score_provider,
+        alert_service,
+        clock=now_iso,
+    )
 
     app.dependency_overrides[compliance_providers.get_posture_provider] = lambda: posture_adapter
     app.dependency_overrides[baseline_providers.get_posture_provider] = lambda: posture_adapter
@@ -905,9 +915,11 @@ def wire_pro(app, db_path: Optional[Path] = None) -> None:
     app.dependency_overrides[get_report_provider] = lambda: report_provider
     app.dependency_overrides[get_alert_service] = lambda: alert_service
     app.dependency_overrides[get_baseline_service] = lambda: baseline_service
+    app.dependency_overrides[get_baseline_monitor] = lambda: baseline_monitor
 
     app.state.alert_service = alert_service
     app.state.baseline_service = baseline_service
+    app.state.baseline_monitor = baseline_monitor
     app.state.report_provider = report_provider
 
     # Give the detection loop somewhere to send what it finds. Without this

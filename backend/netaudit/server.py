@@ -44,11 +44,17 @@ def create_app(
         app.state.token = auth.ensure_token(token_path)
         app.state.token_path = token_path
 
+        monitor = getattr(app.state, "baseline_monitor", None)
+        if monitor is not None:
+            monitor.start()
+
         pipeline = app.state.pipeline
         if autostart_capture:
             pipeline.start()
             pipeline.spawn_background_tasks()
         yield
+        if monitor is not None:
+            await monitor.shutdown()
         await pipeline.shutdown()
         for attr in ("threat_scheduler", "arp_observer"):
             component = getattr(app.state, attr, None)

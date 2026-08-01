@@ -7,6 +7,7 @@ middleware. The packages either side of this seam have their own suites.
 """
 from __future__ import annotations
 
+import asyncio
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -379,6 +380,104 @@ class TestThreatScheduler:
         scheduler.stop()
         scheduler.stop()   # must not raise
         assert scheduler.run_count >= 1
+
+
+class TestBaselineMonitorLifespan:
+    def test_monitor_wraps_service_use_and_stops_before_pipeline_without_capture(self, tmp_path):
+        from netaudit.baselines.models import BaselineScheduleResponse
+        from netaudit.baselines.router import get_baseline_service
+        from netaudit.server import create_app
+
+        events = []
+
+        class RecordingMonitor:
+            def start(self):
+                events.append("monitor.start")
+
+            async def shutdown(self):
+                events.append("monitor.shutdown.begin")
+                await asyncio.sleep(0)
+                events.append("monitor.shutdown.end")
+
+        class RecordingPipeline:
+            def __init__(self):
+                self.start_count = 0
+                self.background_task_count = 0
+
+            def start(self):
+                self.start_count += 1
+
+            def spawn_background_tasks(self):
+                self.background_task_count += 1
+
+            async def shutdown(self):
+                events.append("pipeline.shutdown")
+
+        class RecordingService:
+            def get_schedule(self):
+                events.append("service.get_schedule")
+                return BaselineScheduleResponse(
+                    enabled=False,
+                    interval_hours=24,
+                    last_succeeded_at=None,
+                    last_error=None,
+                    next_due_at=None,
+                )
+
+        app = create_app(
+            db_path=tmp_path / "netaudit.db",
+            token_path=tmp_path / "token",
+            autostart_capture=False,
+        )
+        monitor = RecordingMonitor()
+        pipeline = RecordingPipeline()
+        app.state.baseline_monitor = monitor
+        app.state.pipeline = pipeline
+        app.dependency_overrides[get_baseline_service] = RecordingService
+
+        with TestClient(app) as client:
+            client.headers["X-NetAudit-Token"] = app.state.token
+            assert client.get("/api/baselines/schedule").status_code == 200
+
+        assert events == [
+            "monitor.start",
+            "service.get_schedule",
+            "monitor.shutdown.begin",
+            "monitor.shutdown.end",
+            "pipeline.shutdown",
+        ]
+        assert pipeline.start_count == 0
+        assert pipeline.background_task_count == 0
+
+    def test_wire_pro_composes_one_monitor_with_shared_live_dependencies(self, tmp_path, monkeypatch):
+        from fastapi import FastAPI
+        from netaudit.baselines.router import get_baseline_monitor
+
+        monitors = []
+
+        class RecordingMonitor:
+            def __init__(self, service, posture, traffic, score, dispatcher, clock):
+                self.service = service
+                self.posture = posture
+                self.traffic = traffic
+                self.score = score
+                self.dispatcher = dispatcher
+                self.clock = clock
+                monitors.append(self)
+
+        monkeypatch.setattr("netaudit.baselines.monitor.BaselineMonitor", RecordingMonitor)
+        app = FastAPI()
+        app.state.db_path = tmp_path / "netaudit.db"
+        app.state.posture_service = object()
+        app.state.threat_engine = object()
+
+        integration.wire_pro(app)
+
+        assert len(monitors) == 1
+        assert app.state.baseline_monitor is monitors[0]
+        assert monitors[0].service is app.state.baseline_service
+        assert monitors[0].dispatcher is app.state.alert_service
+        assert app.dependency_overrides[get_baseline_monitor]() is monitors[0]
 
 
 class TestWiredApp:
