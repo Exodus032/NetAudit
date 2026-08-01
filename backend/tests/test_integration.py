@@ -722,6 +722,33 @@ class TestProAdapters:
             )
         assert integration.StoreTrafficProvider(db).peers() == ["93.184.216.34"]
 
+    def test_peers_are_capped_deterministically_without_internal_destinations(self, db):
+        now = time.time()
+        maximum = integration.StoreTrafficProvider.MAX_BASELINE_PEERS
+        for index in reversed(range(maximum + 2)):
+            flowstore.upsert_flow(
+                _flow_row(
+                    f"external-{index}",
+                    now,
+                    remote_host=f"peer-{index:05d}.example",
+                ),
+                db_path=db,
+            )
+        for flow_id, remote in (
+            ("loopback", "127.0.0.1"),
+            ("lan", "192.168.0.7"),
+        ):
+            flowstore.upsert_flow(
+                _flow_row(flow_id, now, remote_addr=remote, is_external=0),
+                db_path=db,
+            )
+
+        expected = [f"peer-{index:05d}.example" for index in range(maximum)]
+        provider = integration.StoreTrafficProvider(db)
+
+        assert provider.peers() == expected
+        assert provider.peers() == expected
+
     def test_score_provider_reports_unmeasured_threats_as_none_not_zero(self):
         class _Score:
             overall = 62

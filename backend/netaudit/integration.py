@@ -712,6 +712,7 @@ class StoreTrafficProvider:
     """
 
     PEER_WINDOW_SECONDS = 24 * 60 * 60
+    MAX_BASELINE_PEERS = 10_000
 
     def __init__(self, db_path: Path) -> None:
         self.db_path = db_path
@@ -720,22 +721,23 @@ class StoreTrafficProvider:
         try:
             import time
 
-            from .store import flows as flowmod
-
-            rows = flowmod.query_flows_since(
-                time.time() - self.PEER_WINDOW_SECONDS, db_path=self.db_path
-            )
+            rows = dbmod.get_conn(self.db_path).execute(
+                """
+                SELECT DISTINCT COALESCE(NULLIF(remote_host, ''), remote_addr) AS peer
+                FROM flows
+                WHERE last_seen_epoch >= ?
+                  AND is_external != 0
+                  AND COALESCE(NULLIF(remote_host, ''), remote_addr) IS NOT NULL
+                  AND COALESCE(NULLIF(remote_host, ''), remote_addr) != ''
+                ORDER BY peer
+                LIMIT ?
+                """,
+                (time.time() - self.PEER_WINDOW_SECONDS, self.MAX_BASELINE_PEERS),
+            ).fetchall()
         except Exception:
             logger.debug("baseline peers unavailable", exc_info=True)
             return []
-        seen: set[str] = set()
-        for row in rows:
-            if not row["is_external"]:
-                continue
-            peer = row["remote_host"] or row["remote_addr"]
-            if peer:
-                seen.add(str(peer))
-        return sorted(seen)
+        return [str(row["peer"]) for row in rows]
 
     def listeners(self) -> list[dict]:
         """Read live from psutil rather than the packet store: a listening
