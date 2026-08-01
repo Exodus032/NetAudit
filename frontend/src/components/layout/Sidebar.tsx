@@ -57,7 +57,7 @@ export function Sidebar({ active, onChange }: { active: ViewId; onChange: (v: Vi
                     aria-current={active === item.id ? "page" : undefined}
                   >
                     <span className="sidebar-icon" aria-hidden="true">{item.icon}</span>
-                    {item.label}
+                    <span className="sidebar-label">{item.label}</span>
                   </button>
                 </li>
               ))}
