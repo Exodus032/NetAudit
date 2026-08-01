@@ -18,6 +18,7 @@ import {
   mockDeleteReport,
   mockDeleteSession,
   mockDiffBaselines,
+  mockGetBaselineSchedule,
   mockGetAlertsConfig,
   mockGetCaptureFilter,
   mockGetLanScan,
@@ -29,6 +30,7 @@ import {
   mockPcapExportEstimate,
   mockPutCaptureFilter,
   mockSiemExport,
+  mockUpdateBaselineSchedule,
   mockStartLanScan,
   mockTestAlertChannel,
   mockUpdateAlertsConfig,
@@ -39,6 +41,7 @@ import type {
   AlertsConfig,
   AlertTestResult,
   BaselineDiff,
+  BaselineSchedule,
   BaselineListItem,
   BaselinesResponse,
   CaptureFilterState,
@@ -362,6 +365,22 @@ export function createBaseline(label: string): Promise<BaselineListItem> {
 
 export function listBaselines(): Promise<BaselinesResponse> {
   return withFallback("/api/baselines", undefined, mockListBaselines);
+}
+
+export function getBaselineSchedule(): Promise<BaselineSchedule> {
+  return withFallback("/api/baselines/schedule", undefined, mockGetBaselineSchedule);
+}
+
+export function updateBaselineSchedule(schedule: Pick<BaselineSchedule, "enabled" | "interval_hours">): Promise<BaselineSchedule> {
+  return withFallback(
+    "/api/baselines/schedule",
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: schedule.enabled, interval_hours: schedule.interval_hours }),
+    },
+    () => mockUpdateBaselineSchedule(schedule),
+  );
 }
 
 export function diffBaselines(a: string, b: string): Promise<BaselineDiff> {

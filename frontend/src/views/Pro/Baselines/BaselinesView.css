@@ -1,10 +1,61 @@
 .baselines-capture {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
 }
 .baselines-label-input {
   flex: 1 1 260px;
+}
+
+.baselines-schedule {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.baselines-schedule-controls,
+.baselines-schedule-actions,
+.baselines-schedule-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.baselines-schedule-controls {
+  align-items: flex-end;
+}
+
+.baselines-schedule-actions {
+  align-items: center;
+  margin-left: auto;
+}
+
+.baselines-schedule-status {
+  gap: 6px 18px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.baselines-schedule-last-error {
+  color: var(--status-critical);
+}
+
+@media (max-width: 600px) {
+  .baselines-capture,
+  .baselines-schedule-controls {
+    align-items: stretch;
+  }
+
+  .baselines-capture .pro-btn,
+  .baselines-schedule-actions {
+    flex: 1 1 160px;
+  }
+
+  .baselines-schedule-actions {
+    margin-left: 0;
+    justify-content: flex-end;
+  }
 }
 
 .baselines-diff {

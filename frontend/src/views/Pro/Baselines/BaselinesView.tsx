@@ -1,9 +1,13 @@
-import { useState } from "react";
-import { useBaselineDiff, useBaselines } from "../../../hooks/useBaselines";
+import { useEffect, useState } from "react";
+import { useBaselineDiff, useBaselines, useBaselineSchedule } from "../../../hooks/useBaselines";
 import { ErrorState, EmptyState, SkeletonRows } from "../../../components/common/States";
 import { formatDateTime, formatNumber } from "../../../lib/format";
 import "../../../components/pro/pro-common.css";
 import "./BaselinesView.css";
+import type { BaselineSchedule } from "../../../api/typesPro";
+
+const SCHEDULE_INTERVALS: BaselineSchedule["interval_hours"][] = [6, 12, 24, 48, 168];
+
 
 function Delta({ value }: { value: number }) {
   if (value === 0) return <span className="pro-muted">no change</span>;
@@ -17,6 +21,24 @@ export function BaselinesView() {
   const [fromId, setFromId] = useState("");
   const [toId, setToId] = useState("");
   const { diff, loading: diffLoading, error: diffError, run } = useBaselineDiff();
+  const {
+    schedule,
+    loading: scheduleLoading,
+    error: scheduleError,
+    saving: scheduleSaving,
+    saveError: scheduleSaveError,
+    save: saveSchedule,
+  } = useBaselineSchedule();
+  const [scheduleDraft, setScheduleDraft] = useState<BaselineSchedule | null>(null);
+
+  useEffect(() => {
+    if (schedule) setScheduleDraft(schedule);
+  }, [schedule]);
+
+  const handleScheduleSave = () => {
+    if (scheduleDraft) void saveSchedule(scheduleDraft).catch(() => undefined);
+  };
+
 
   const handleCapture = async () => {
     if (!label.trim()) return;
@@ -32,6 +54,73 @@ export function BaselinesView() {
 
   return (
     <div>
+      <section className="view-section">
+        <div className="view-section-header">
+          <span className="view-section-title">Scheduled monitoring</span>
+        </div>
+
+        {scheduleError && <ErrorState title="Couldn't load scheduled monitoring" detail={scheduleError} />}
+        {!scheduleError && (scheduleLoading || !scheduleDraft) && (
+          <div className="panel">
+            <SkeletonRows rows={3} height={24} />
+          </div>
+        )}
+        {!scheduleError && !scheduleLoading && scheduleDraft && (
+          <div className="panel baselines-schedule">
+            <div className="baselines-schedule-controls">
+              <label className="pro-checkbox">
+                <input
+                  type="checkbox"
+                  checked={scheduleDraft.enabled}
+                  onChange={(e) => setScheduleDraft({ ...scheduleDraft, enabled: e.target.checked })}
+                  disabled={scheduleSaving}
+                />
+                Scheduled monitoring enabled
+              </label>
+              <div className="pro-field">
+                <label className="pro-field-label" htmlFor="baseline-schedule-interval">Capture interval</label>
+                <select
+                  id="baseline-schedule-interval"
+                  className="pro-select"
+                  value={scheduleDraft.interval_hours}
+                  onChange={(e) => setScheduleDraft({
+                    ...scheduleDraft,
+                    interval_hours: Number(e.target.value) as BaselineSchedule["interval_hours"],
+                  })}
+                  disabled={scheduleSaving}
+                >
+                  {SCHEDULE_INTERVALS.map((interval) => (
+                    <option key={interval} value={interval}>{interval === 168 ? "7d" : `${interval}h`}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="baselines-schedule-actions">
+                {scheduleSaveError && <span className="pro-inline-error">{scheduleSaveError}</span>}
+                <button className="pro-btn pro-btn-primary" onClick={handleScheduleSave} disabled={scheduleSaving}>
+                  {scheduleSaving ? "Saving…" : "Save schedule"}
+                </button>
+              </div>
+            </div>
+
+            <div className="baselines-schedule-status pro-muted">
+              <span>
+                Last success: {scheduleDraft.last_succeeded_at
+                  ? formatDateTime(scheduleDraft.last_succeeded_at)
+                  : "No successful scheduled capture yet"}
+              </span>
+              <span>
+                Next due: {scheduleDraft.next_due_at
+                  ? formatDateTime(scheduleDraft.next_due_at)
+                  : scheduleDraft.enabled ? "Awaiting first scheduled capture" : "Disabled"}
+              </span>
+              <span className={scheduleDraft.last_error ? "baselines-schedule-last-error" : undefined}>
+                Latest scheduler error: {scheduleDraft.last_error ?? "None"}
+              </span>
+            </div>
+          </div>
+        )}
+      </section>
+
       <section className="view-section">
         <div className="view-section-header">
           <span className="view-section-title">Capture a baseline</span>
@@ -69,6 +158,7 @@ export function BaselinesView() {
               <thead>
                 <tr>
                   <th>Label</th>
+                  <th>Origin</th>
                   <th>Captured</th>
                   <th>Checks</th>
                   <th>Peers</th>
@@ -81,6 +171,7 @@ export function BaselinesView() {
                 {baselines.map((b) => (
                   <tr key={b.id}>
                     <td>{b.label}</td>
+                    <td>{b.origin === "scheduled" ? "Scheduled" : "Manual"}</td>
                     <td>{formatDateTime(b.captured_at)}</td>
                     <td>{formatNumber(b.checks_count)}</td>
                     <td>{formatNumber(b.peers_count)}</td>

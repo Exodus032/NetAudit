@@ -201,7 +201,21 @@ export interface BaselineRef {
   captured_at: string;
 }
 
+export type BaselineOrigin = "manual" | "scheduled";
+
+export type BaselineScheduleInterval = 6 | 12 | 24 | 48 | 168;
+
+export interface BaselineSchedule {
+  enabled: boolean;
+  interval_hours: BaselineScheduleInterval;
+  last_succeeded_at: string | null;
+  next_due_at: string | null;
+  last_error: string | null;
+}
+
+
 export interface BaselineListItem extends BaselineRef {
+  origin: BaselineOrigin;
   checks_count: number;
   peers_count: number;
   listeners_count: number;
