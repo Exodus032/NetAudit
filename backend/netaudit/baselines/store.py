@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import secrets
 import sqlite3
+import threading
 from dataclasses import dataclass
 from typing import Optional
 
@@ -16,6 +17,7 @@ from ..store import db as dbmod
 from ..timeutil import now_iso
 
 _schema_ready_for: set[str] = set()
+_schema_lock = threading.Lock()
 
 _ALLOWED_INTERVAL_HOURS = frozenset((6, 12, 24, 48, 168))
 _BASELINE_ORIGINS = frozenset(("manual", "scheduled"))
@@ -25,46 +27,49 @@ def _ensure_schema(conn: sqlite3.Connection, db_path) -> None:
     key = str(db_path) if db_path is not None else "default"
     if key in _schema_ready_for:
         return
-    conn.executescript(
-        """
-        CREATE TABLE IF NOT EXISTS baselines (
-            id TEXT PRIMARY KEY,
-            label TEXT NOT NULL,
-            captured_at TEXT NOT NULL,
-            checks_json TEXT NOT NULL DEFAULT '[]',
-            peers_json TEXT NOT NULL DEFAULT '[]',
-            listeners_json TEXT NOT NULL DEFAULT '[]',
-            posture_score INTEGER NOT NULL DEFAULT 0,
-            threats_score INTEGER,
-            overall_score INTEGER NOT NULL DEFAULT 0,
-            origin TEXT NOT NULL DEFAULT 'manual'
-        );
-        """
-    )
-    columns = {row["name"] for row in conn.execute("PRAGMA table_info(baselines)")}
-    if "origin" not in columns:
-        conn.execute("ALTER TABLE baselines ADD COLUMN origin TEXT NOT NULL DEFAULT 'manual'")
-    conn.executescript(
-        """
-        CREATE TABLE IF NOT EXISTS baseline_schedule (
-            singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
-            enabled INTEGER NOT NULL DEFAULT 0,
-            interval_hours INTEGER NOT NULL DEFAULT 24
-                CHECK (interval_hours IN (6, 12, 24, 48, 168)),
-            last_success_at TEXT,
-            last_error TEXT
-        );
-        CREATE INDEX IF NOT EXISTS idx_baselines_origin_captured_at
-            ON baselines (origin, captured_at);
-        """
-    )
-    conn.execute(
-        """
-        INSERT OR IGNORE INTO baseline_schedule (singleton, enabled, interval_hours)
-        VALUES (1, 0, 24)
-        """
-    )
-    _schema_ready_for.add(key)
+    with _schema_lock:
+        if key in _schema_ready_for:
+            return
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS baselines (
+                id TEXT PRIMARY KEY,
+                label TEXT NOT NULL,
+                captured_at TEXT NOT NULL,
+                checks_json TEXT NOT NULL DEFAULT '[]',
+                peers_json TEXT NOT NULL DEFAULT '[]',
+                listeners_json TEXT NOT NULL DEFAULT '[]',
+                posture_score INTEGER NOT NULL DEFAULT 0,
+                threats_score INTEGER,
+                overall_score INTEGER NOT NULL DEFAULT 0,
+                origin TEXT NOT NULL DEFAULT 'manual'
+            );
+            """
+        )
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(baselines)")}
+        if "origin" not in columns:
+            conn.execute("ALTER TABLE baselines ADD COLUMN origin TEXT NOT NULL DEFAULT 'manual'")
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS baseline_schedule (
+                singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+                enabled INTEGER NOT NULL DEFAULT 0,
+                interval_hours INTEGER NOT NULL DEFAULT 24
+                    CHECK (interval_hours IN (6, 12, 24, 48, 168)),
+                last_success_at TEXT,
+                last_error TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_baselines_origin_captured_at
+                ON baselines (origin, captured_at);
+            """
+        )
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO baseline_schedule (singleton, enabled, interval_hours)
+            VALUES (1, 0, 24)
+            """
+        )
+        _schema_ready_for.add(key)
 
 
 def _new_id() -> str:
