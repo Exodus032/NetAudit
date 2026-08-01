@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 import time
 from pathlib import Path
@@ -17,6 +18,11 @@ from typing import Optional
 MAX_REPORTS = 50
 
 _EXT_FOR_FORMAT = {"html": "html", "markdown": "md", "json": "json"}
+
+# Exactly the shape new_report_id() produces. Anything else (path
+# separators, dots, %-escapes that decode to \ on Windows) is rejected
+# before any Path is built, so a crafted id can never escape reports_dir.
+_REPORT_ID_RE = re.compile(r"^report-\d{8}T\d{6}Z-[0-9a-f]{6}$")
 
 
 def _default_reports_dir() -> Path:
@@ -35,6 +41,14 @@ DEFAULT_REPORTS_DIR = _default_reports_dir()
 def new_report_id() -> str:
     ts = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     return f"report-{ts}-{secrets.token_hex(3)}"
+
+
+def _is_safe_report_id(report_id: str, reports_dir: Path) -> bool:
+    if not _REPORT_ID_RE.fullmatch(report_id):
+        return False
+    # Defense in depth: even a regex-valid id must resolve inside reports_dir.
+    resolved = (reports_dir / f"{report_id}.meta.json").resolve()
+    return resolved.parent == reports_dir.resolve()
 
 
 def _paths(reports_dir: Path, report_id: str, fmt: str) -> tuple[Path, Path]:
@@ -105,6 +119,8 @@ def list_reports(reports_dir: Optional[Path] = None) -> list[dict]:
 
 def get_report(report_id: str, reports_dir: Optional[Path] = None) -> Optional[tuple[str, dict]]:
     reports_dir = reports_dir or DEFAULT_REPORTS_DIR
+    if not _is_safe_report_id(report_id, reports_dir):
+        return None
     meta_path = reports_dir / f"{report_id}.meta.json"
     if not meta_path.exists():
         return None
@@ -120,6 +136,8 @@ def get_report(report_id: str, reports_dir: Optional[Path] = None) -> Optional[t
 
 def delete_report(report_id: str, reports_dir: Optional[Path] = None) -> bool:
     reports_dir = reports_dir or DEFAULT_REPORTS_DIR
+    if not _is_safe_report_id(report_id, reports_dir):
+        return False
     meta_path = reports_dir / f"{report_id}.meta.json"
     if not meta_path.exists():
         return False

@@ -11,6 +11,7 @@ below reads from there so overriding is optional, not required).
 """
 from __future__ import annotations
 
+import math
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -42,7 +43,10 @@ def _parse_iso(value: str) -> datetime:
     v = value.strip()
     if v.endswith("Z"):
         v = v[:-1] + "+00:00"
-    dt = datetime.fromisoformat(v)
+    try:
+        dt = datetime.fromisoformat(v)
+    except ValueError:
+        raise _error(400, "bad_request", f"Invalid timestamp '{value}'")
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt
@@ -52,14 +56,20 @@ def _parse_window_seconds(window: str) -> float:
     w = window.strip().lower()
     try:
         if w.endswith("h"):
-            return float(w[:-1]) * 3600
-        if w.endswith("m"):
-            return float(w[:-1]) * 60
-        if w.endswith("d"):
-            return float(w[:-1]) * 86400
-        return float(w)
+            seconds = float(w[:-1]) * 3600
+        elif w.endswith("m"):
+            seconds = float(w[:-1]) * 60
+        elif w.endswith("d"):
+            seconds = float(w[:-1]) * 86400
+        else:
+            seconds = float(w)
     except ValueError:
         raise _error(400, "bad_request", f"Invalid window '{window}'")
+    # float() happily parses 'nan'/'inf', which would poison the timeline
+    # arithmetic downstream -- reject anything non-finite or non-positive.
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise _error(400, "bad_request", f"Invalid window '{window}'")
+    return seconds
 
 
 @router.get("/api/threats")

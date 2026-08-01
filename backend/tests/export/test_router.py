@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import threading
 
+from netaudit.export import events as events_mod
 from netaudit.export.provider import StaticReportDataProvider
 from netaudit.store.packets import append_batch
 
@@ -126,6 +128,16 @@ class TestReportsListGetDelete:
         resp = client.delete("/api/reports/does-not-exist")
         assert resp.status_code == 404
 
+    def test_get_traversal_id_is_404(self, client):
+        # %5C decodes to a backslash but stays one path segment, so the
+        # raw id reaches the handler with a Windows path separator in it.
+        resp = client.get("/api/reports/..%5C..%5Csecret")
+        assert resp.status_code == 404
+
+    def test_delete_traversal_id_is_404(self, client):
+        resp = client.delete("/api/reports/..%5C..%5Csecret")
+        assert resp.status_code == 404
+
 
 # --- E6: SIEM export -------------------------------------------------------
 
@@ -201,3 +213,38 @@ class TestExportEvents:
         override_provider(_SAMPLE_PROVIDER)
         resp = client.get("/api/export/events", params={"format": "jsonl", "kinds": "threat"})
         assert "netaudit-events-" in resp.headers["content-disposition"]
+
+    def test_traffic_stream_survives_cross_thread_iteration(self, isolated_env):
+        """StreamingResponse pulls each chunk of a sync generator through a
+        threadpool, so successive next() calls can land on different
+        threads. The sqlite connection is thread-local with
+        check_same_thread=True; the traffic rows must be materialised in a
+        single resume or iteration crashes mid-stream."""
+        append_batch([_row(i) for i in range(5)], isolated_env["live_db"])
+        it = events_mod.iter_events(
+            _SAMPLE_PROVIDER, {"traffic"}, db_path=isolated_env["live_db"],
+        )
+
+        def next_on_fresh_thread():
+            box = {}
+
+            def _step():
+                try:
+                    box["value"] = next(it)
+                except StopIteration:
+                    pass
+                except Exception as exc:  # pragma: no cover -- the regression itself
+                    box["error"] = exc
+
+            t = threading.Thread(target=_step)
+            t.start()
+            t.join()
+            if "error" in box:
+                raise box["error"]
+            return box.get("value")
+
+        events = []
+        while (ev := next_on_fresh_thread()) is not None:
+            events.append(ev)
+        assert len(events) == 5
+        assert all(ev["kind"] == "traffic" for ev in events)

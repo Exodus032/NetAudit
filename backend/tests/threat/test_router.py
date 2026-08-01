@@ -162,6 +162,25 @@ def test_timeline_is_contiguous_and_zero_filled(client):
         assert (b - a).total_seconds() == 3600
 
 
+def test_list_threats_bad_since_is_400(client):
+    resp = client.get("/api/threats", params={"since": "not-a-timestamp"})
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "bad_request"
+
+
+def test_list_threats_bad_until_is_400(client):
+    resp = client.get("/api/threats", params={"until": "2026-13-99T99:99:99Z"})
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "bad_request"
+
+
+@pytest.mark.parametrize("window", ["nan", "inf", "nanh", "-5m", "bogus"])
+def test_timeline_non_finite_or_bogus_window_is_400(client, window):
+    resp = client.get("/api/threats/timeline", params={"window": window})
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "bad_request"
+
+
 def test_list_detectors_includes_test_detector(client):
     resp = client.get("/api/threats/detectors")
     ids = [d["id"] for d in resp.json()["detectors"]]

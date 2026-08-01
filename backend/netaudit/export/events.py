@@ -106,7 +106,13 @@ def _epoch(value) -> float:
         return 0.0
 
 
-def _iter_traffic_rows(since: Optional[float], until: Optional[float], limit: int, db_path: Optional[Path]) -> Iterator[dict]:
+def _fetch_traffic_rows(since: Optional[float], until: Optional[float], limit: int, db_path: Optional[Path]) -> list[dict]:
+    """Fetches every matching row eagerly, on the calling thread. The
+    connection is thread-local (`check_same_thread=True`), and a lazy
+    cursor consumed through StreamingResponse can resume on a different
+    threadpool thread mid-stream, crashing with sqlite3.ProgrammingError.
+    Memory stays bounded by `limit` (same reasoning as the pcap export,
+    which also materialises its rows)."""
     conn = dbmod.get_conn(db_path)
     clauses = []
     params: dict = {}
@@ -117,7 +123,7 @@ def _iter_traffic_rows(since: Optional[float], until: Optional[float], limit: in
         clauses.append("ts_epoch <= :until")
         params["until"] = until
     where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-    cursor = conn.execute(
+    rows = conn.execute(
         f"""
         SELECT ts_epoch, protocol, src_addr, src_port, dst_addr, dst_port,
                process_name, summary, risk
@@ -126,9 +132,8 @@ def _iter_traffic_rows(since: Optional[float], until: Optional[float], limit: in
         LIMIT :limit
         """,
         {**params, "limit": limit},
-    )
-    for row in cursor:
-        yield dict(row)
+    ).fetchall()
+    return [dict(row) for row in rows]
 
 
 def iter_events(
@@ -139,11 +144,11 @@ def iter_events(
     traffic_limit: int = 100_000,
     db_path: Optional[Path] = None,
 ) -> Iterator[dict]:
-    """Yields normalized event dicts for every requested kind. Streamed --
-    each source is iterated lazily and nothing is materialised beyond one
-    event at a time (the provider's lists are already in memory by the
-    time they reach this function, but this function itself never builds
-    a combined list)."""
+    """Yields normalized event dicts for every requested kind. Each source
+    is fully in memory before its rows are yielded (the provider's lists
+    already are; traffic is fetched eagerly, capped by `traffic_limit`) --
+    this function never builds a combined list, and eager fetching keeps
+    every sqlite access on a single thread (see _fetch_traffic_rows)."""
     kinds = set(kinds) or VALID_KINDS
 
     def _in_window(ts_epoch: float) -> bool:
@@ -173,5 +178,5 @@ def iter_events(
                 yield ev
 
     if "traffic" in kinds:
-        for row in _iter_traffic_rows(since, until, traffic_limit, db_path):
+        for row in _fetch_traffic_rows(since, until, traffic_limit, db_path):
             yield _normalize_traffic(row)

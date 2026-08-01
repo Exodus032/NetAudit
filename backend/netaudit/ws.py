@@ -71,7 +71,7 @@ async def ws_live(websocket: WebSocket) -> None:
                         last_log_id = new_max
                     last_log = now
 
-                recs = await asyncio.to_thread(rules_engine.list_recommendations, True, db_path)
+                recs = await asyncio.to_thread(rules_engine.list_recommendations, False, db_path)
                 for r in recs:
                     if last_alert_seen.get(r["id"]) != r["last_seen"]:
                         await websocket.send_json({"type": "alert", "data": r})

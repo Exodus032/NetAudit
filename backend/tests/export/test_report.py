@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from netaudit.export.provider import StaticReportDataProvider
 from netaudit.export.report_data import build_report_data
 from netaudit.export.report_html import render_html_report
@@ -154,3 +156,36 @@ class TestReportsStorePruning:
         assert reports_store.delete_report(meta["id"], reports_dir=tmp_path) is True
         assert reports_store.get_report(meta["id"], reports_dir=tmp_path) is None
         assert reports_store.delete_report(meta["id"], reports_dir=tmp_path) is False
+
+
+
+class TestReportIdValidation:
+    """report_id flows straight into filesystem paths; ids with path
+    separators (/ on POSIX, \\ on Windows -- which survives URL routing
+    as %5C in a single segment) must be rejected before any Path is
+    built, or get/delete escape the reports dir."""
+
+    @pytest.mark.parametrize("evil_id", [
+        "../secret",
+        "..\\secret",
+        "..\\../secret",
+        "report-20260101T000000Z-abcdef/../../secret",
+    ])
+    def test_traversal_id_cannot_read_or_delete_outside_reports_dir(self, tmp_path, evil_id):
+        reports_dir = tmp_path / "reports"
+        reports_dir.mkdir()
+        secret_meta = tmp_path / "secret.meta.json"
+        secret_meta.write_text('{"id": "secret", "format": "html"}', encoding="utf-8")
+        secret_content = tmp_path / "secret.html"
+        secret_content.write_text("top secret", encoding="utf-8")
+
+        assert reports_store.get_report(evil_id, reports_dir=reports_dir) is None
+        assert reports_store.delete_report(evil_id, reports_dir=reports_dir) is False
+        assert secret_meta.exists()
+        assert secret_content.exists()
+
+    def test_generated_ids_still_round_trip(self, tmp_path):
+        meta = reports_store.save_report("body", "html", "T", "24h", ["summary"], reports_dir=tmp_path)
+        content, _ = reports_store.get_report(meta["id"], reports_dir=tmp_path)
+        assert content == "body"
+        assert reports_store.delete_report(meta["id"], reports_dir=tmp_path) is True
