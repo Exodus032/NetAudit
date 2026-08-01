@@ -160,7 +160,7 @@ def test_peer_only_improvements_and_removals_do_not_alert(db_path, initial, chan
 def test_capture_failure_persists_bounded_error_without_moving_success_or_alerting(db_path):
     monitor, service, inputs, dispatcher, _ = make_monitor(db_path)
     monitor.run_once(now=iso(START))
-    previous_success = service.get_schedule().last_success_at
+    previous_success = service.get_schedule().last_succeeded_at
     inputs.fail = True
 
     result = monitor.run_once(now=iso(START + timedelta(hours=6)))
@@ -168,7 +168,7 @@ def test_capture_failure_persists_bounded_error_without_moving_success_or_alerti
 
     assert result.captured is False
     assert result.error == "provider unavailable"
-    assert schedule.last_success_at == previous_success
+    assert schedule.last_succeeded_at == previous_success
     assert schedule.last_error == "provider unavailable"
     assert len(schedule.last_error) <= 500
     assert dispatcher.calls == []

@@ -159,9 +159,9 @@ class BaselineMonitor:
             now = parse_iso(self._canonical_time(self._clock()))
             if self._retry_not_before is not None:
                 return max(0.0, min(interval, self._retry_not_before - now))
-            if schedule.last_success_at is None:
+            if schedule.last_succeeded_at is None:
                 return interval
-            due_at = parse_iso(schedule.last_success_at) + interval
+            due_at = parse_iso(schedule.last_succeeded_at) + interval
             return max(0.0, min(interval, due_at - now))
         except Exception:
             return 60.0
