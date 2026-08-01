@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -441,6 +442,161 @@ class TestWiredApp:
         assert body["plain"]
         assert body["what_would_make_it_wrong"]
 
+    @pytest.mark.parametrize("path", [
+        "/api/compliance/frameworks",
+        "/api/alerts/config",
+        "/api/alerts/history",
+        "/api/baselines",
+        "/api/capture/filter",
+        "/api/sessions",
+        "/api/reports",
+    ])
+    def test_pro_routes_are_reachable_after_late_mounting(self, client, path):
+        assert client.get(path).status_code == 200
+
+    @pytest.mark.parametrize("path", ["/api/compliance/frameworks", "/api/baselines", "/api/reports"])
+    def test_pro_routes_inherit_auth(self, client, path):
+        assert client.get(path, headers={"X-NetAudit-Token": ""}).status_code == 401
+
+    def test_compliance_sees_real_posture_evidence(self, client):
+        """Without the orchestrator's override, compliance's default provider
+        reports no checks at all and every control comes back
+        `not_assessed`. Seeing any other status proves the real posture
+        service is actually reaching it."""
+        frameworks = client.get("/api/compliance/frameworks").json()["frameworks"]
+        assert frameworks, "at least one framework must ship"
+        report = client.get(f"/api/compliance/{frameworks[0]['id']}").json()
+        statuses = {c["status"] for c in report["controls"]}
+        assert statuses - {"not_assessed"}, "compliance is not receiving posture evidence"
+
+    def test_baseline_snapshot_captures_live_state(self, client):
+        created = client.post("/api/baselines", json={"label": "wiring test"}).json()
+        assert created["label"] == "wiring test"
+        # A snapshot with zero checks means the posture provider override did
+        # not take, which is the failure mode worth catching here.
+        assert created["checks_count"] > 0
+        assert created["listeners_count"] > 0
+        assert 0 <= created["overall_score"] <= 100
+        listed = client.get("/api/baselines").json()["baselines"]
+        assert created["id"] in {b["id"] for b in listed}
+
+    def test_report_is_built_from_live_data_not_the_static_fallback(self, client):
+        """`export`'s default provider is a fixed sample. If the override is
+        missing, the report still renders -- with someone else's numbers."""
+        res = client.post("/api/reports", json={"format": "json", "window": "1h"})
+        assert res.status_code == 200
+        body = res.json()
+        score = body["security_score"]
+        live = client.get("/api/security/score").json()
+        assert score["overall"] == live["overall"]
+
+    def test_lan_scan_rejects_a_subnet_this_machine_is_not_on(self, client):
+        """The interface override widens what may be scanned, so it has to
+        stay narrow: a valid RFC1918 subnet the machine has no interface on
+        must still be refused."""
+        res = client.post("/api/devices/scan", json={"subnet": "10.99.99.0/24", "ports": [80]})
+        assert res.status_code == 400
+
+    def test_pcap_export_emits_a_real_libpcap_header(self, client):
+        res = client.get("/api/capture/pcap?limit=10")
+        assert res.status_code == 200
+        # Little-endian magic + version 2.4, per the libpcap file format.
+        assert res.content[:8] == b"\xd4\xc3\xb2\xa1\x02\x00\x04\x00"
+
     def test_v1_routes_still_work_alongside_the_new_ones(self, client):
         assert client.get("/api/health").status_code == 200
         assert client.get("/api/traffic/log").status_code == 200
+
+
+def _flow_row(flow_id, ts, **overrides):
+    row = {
+        "id": flow_id,
+        "protocol": "tcp",
+        "state": "established",
+        "local_addr": "192.168.0.53",
+        "local_port": 51422,
+        "remote_addr": "93.184.216.34",
+        "remote_port": 443,
+        "remote_host": None,
+        "remote_org": None,
+        "direction": "outbound",
+        "pid": 1,
+        "process_name": "chrome.exe",
+        "process_path": None,
+        "bytes_in": 10,
+        "bytes_out": 20,
+        "ts_epoch": ts,
+        "is_external": 1,
+        "is_encrypted": 1,
+        "risk": "low",
+        "risk_reasons": "[]",
+    }
+    row.update(overrides)
+    return row
+
+
+class TestProAdapters:
+    """The adapter classes `wire_pro` installs, exercised directly."""
+
+    def test_interface_provider_skips_down_and_loopback_interfaces(self, monkeypatch):
+        monkeypatch.setattr(
+            integration.netinfo,
+            "list_interfaces",
+            lambda: [
+                {"ipv4": "192.168.0.53", "netmask": "255.255.255.0", "is_up": True, "is_loopback": False},
+                {"ipv4": "169.254.104.194", "netmask": "255.255.0.0", "is_up": False, "is_loopback": False},
+                {"ipv4": "127.0.0.1", "netmask": "255.0.0.0", "is_up": True, "is_loopback": True},
+                {"ipv4": None, "netmask": None, "is_up": True, "is_loopback": False},
+            ],
+        )
+        assert integration.MachineInterfaceProvider().interfaces() == [
+            {"address": "192.168.0.53", "prefixlen": 24}
+        ]
+
+    def test_peers_use_the_baseline_window_not_the_live_connections_window(self, db):
+        """`query_connections` only sees the last 120 seconds. A baseline
+        taken on a quiet minute would then record an empty peer set and make
+        every ordinary destination look new on the next diff."""
+        old = time.time() - 3600  # outside the live window, inside a day
+        flowstore.upsert_flow(_flow_row("f1", old, remote_host="example.com"), db_path=db)
+
+        provider = integration.StoreTrafficProvider(db)
+        assert flowstore.query_connections(db_path=db) == []
+        assert provider.peers() == ["example.com"]
+
+    def test_peers_exclude_internal_flows(self, db):
+        now = time.time()
+        for flow_id, remote, external in (("a", "93.184.216.34", 1), ("b", "192.168.0.7", 0)):
+            flowstore.upsert_flow(
+                _flow_row(flow_id, now, remote_addr=remote, is_external=external), db_path=db
+            )
+        assert integration.StoreTrafficProvider(db).peers() == ["93.184.216.34"]
+
+    def test_score_provider_reports_unmeasured_threats_as_none_not_zero(self):
+        class _Score:
+            overall = 62
+            components = [type("C", (), {"id": "posture", "score": 70})()]
+
+        class _Posture:
+            def get_security_score(self):
+                return _Score()
+
+        result = integration.CompositeScoreProvider(_Posture()).security_score()
+        assert result == {"posture": 70, "threats": None, "overall": 62}
+
+    def test_adapters_degrade_to_empty_rather_than_raising(self):
+        class _Broken:
+            def get_report(self):
+                raise RuntimeError("posture exploded")
+
+            def get_security_score(self):
+                raise RuntimeError("posture exploded")
+
+        assert integration.PostureChecksAdapter(_Broken()).checks() == []
+        assert integration.CompositeScoreProvider(_Broken()).security_score() == {
+            "posture": 0, "threats": None, "overall": 0,
+        }
+        provider = integration.LiveReportDataProvider(_Broken(), None, Path("/nonexistent/x.db"))
+        assert provider.security_score() == {}
+        assert provider.posture_report() == {}
+        assert provider.threats() == []

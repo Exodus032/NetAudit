@@ -133,6 +133,52 @@ def test_unknown_protocol_gets_ip_header_only():
     assert set(frame[34:]) <= {0}
 
 
+def test_huge_aggregated_length_does_not_overflow_or_blow_up():
+    # Regression: on the polling tier, `length` can be a flow-aggregated
+    # byte count far larger than any single Ethernet frame (found against
+    # the real live database while verifying this module). This must
+    # never raise (a naive implementation overflows struct.pack's 16-bit
+    # length fields) and must never allocate anything close to the full
+    # `length` in zero padding.
+    packet = {
+        "protocol": "tcp", "src_addr": "10.0.0.1", "src_port": 51000,
+        "dst_addr": "1.2.3.4", "dst_port": 443, "length": 50_000_000, "flags": "ACK",
+    }
+    frame, orig_len = synth.synthesize_frame(packet)
+    assert orig_len == 50_000_000
+    assert len(frame) <= synth.MAX_SYNTHESIZED_FRAME_LEN
+    assert len(frame) < orig_len  # honestly incomplete, not silently truncated to match
+    ip = frame[14:34]
+    total_len = struct.unpack("!H", ip[2:4])[0]
+    assert total_len == len(frame) - 14
+
+
+def test_huge_length_udp_and_icmp_also_bounded():
+    for protocol in ("udp", "icmp"):
+        packet = {
+            "protocol": protocol, "src_addr": "10.0.0.1", "src_port": 1, "dst_port": 2,
+            "dst_addr": "1.2.3.4", "length": 10_000_000, "flags": None,
+        }
+        frame, orig_len = synth.synthesize_frame(packet)
+        assert len(frame) <= synth.MAX_SYNTHESIZED_FRAME_LEN
+
+
+def test_huge_length_non_ipv4_and_unknown_protocol_also_bounded():
+    packet = {
+        "protocol": "tcp", "src_addr": "fe80::1", "dst_addr": "fe80::2",
+        "src_port": 1, "dst_port": 2, "length": 10_000_000, "flags": None,
+    }
+    frame, _ = synth.synthesize_frame(packet)
+    assert len(frame) <= synth.MAX_SYNTHESIZED_FRAME_LEN
+
+    packet2 = {
+        "protocol": "gre", "src_addr": "10.0.0.1", "dst_addr": "10.0.0.2",
+        "src_port": None, "dst_port": None, "length": 10_000_000, "flags": None,
+    }
+    frame2, _ = synth.synthesize_frame(packet2)
+    assert len(frame2) <= synth.MAX_SYNTHESIZED_FRAME_LEN
+
+
 def test_tcp_flag_parsing_all_bits():
     packet = {
         "protocol": "tcp", "src_addr": "10.0.0.1", "src_port": 1,

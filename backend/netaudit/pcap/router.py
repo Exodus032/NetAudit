@@ -90,8 +90,19 @@ def export_pcap(
 def _iter_pcap_bytes(filters: live_query.PcapExportFilters):
     from .format import write_global_header, write_packet_record
 
+    # Materialize the filtered rows *before* starting the slow part (frame
+    # synthesis + streaming each chunk out over the network, which can
+    # take far longer than the query itself once the client is slow to
+    # read). netaudit.store.db arms a wall-clock deadline per connection
+    # fetch (SECURITY.md Part C item 6) that aborts the *statement* if too
+    # much time passes -- interleaving cursor iteration with slow
+    # per-chunk network I/O risks hitting that deadline on a large export.
+    # These are header-only rows (no payload), so holding the filtered set
+    # in memory is cheap even for a large capture.
+    rows = list(live_query.iter_export_packets(filters))
+
     yield write_global_header(snaplen=65535, linktype=1)  # EN10MB -- every synthesised frame starts with Ethernet
-    for row in live_query.iter_export_packets(filters):
+    for row in rows:
         frame, orig_len = synth.synthesize_frame(row)
         ts_epoch = row["ts_epoch"] or 0.0
         ts_sec = int(ts_epoch)

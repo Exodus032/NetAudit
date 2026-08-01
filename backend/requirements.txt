@@ -30,6 +30,12 @@ scapy==2.7.0; platform_system == "Windows"
 # the only platform this backend targets; kept optional via the marker so
 # a non-Windows dev/test environment doesn't need it installed.
 
+python-multipart==0.0.32
+# FastAPI's `UploadFile`/`File(...)` refuses to even register a route
+# without it, so the pcap import endpoint (E2) needs it present at startup.
+# It only pulls the uploaded bytes out of the request body; all size-capping
+# and parsing is done by hand in netaudit/pcap/. No network access.
+
 pytest==9.1.1
 # Test runner. Dev/test dependency only -- not imported by any code path
 # that runs in the shipped service.

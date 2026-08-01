@@ -137,7 +137,12 @@ class TestCef:
         extension = parts[7]
         parsed = _parse_cef_extension(extension)
         assert parsed["dproc"] == HOSTILE_PROCESS
-        assert parsed["msg"] == HOSTILE_MESSAGE
+        # CRLF and lone LF are both normalised to a single escaped '\n' by
+        # design (a SIEM record just needs to stay single-line; preserving
+        # the CR/LF distinction has no value here), so compare after the
+        # same normalisation on the expected side.
+        normalized_expected = HOSTILE_MESSAGE.replace("\r\n", "\n").replace("\r", "\n")
+        assert parsed["msg"] == normalized_expected
         assert parsed["src"] == "10.0.0.5"
         assert parsed["dst"] == "1.2.3.4"
 

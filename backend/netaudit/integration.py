@@ -545,6 +545,299 @@ class LiveFindingsProvider:
         ]
 
 
+class PostureChecksAdapter:
+    """Satisfies both `compliance.PostureProvider` and
+    `baselines.PostureProvider`, which are the same shape declared twice on
+    purpose so neither package imports the other.
+
+    Emits plain dicts rather than posture's pydantic models: that is the
+    whole point of those Protocols, and it means a check gaining a field
+    never ripples into compliance or baselines.
+    """
+
+    def __init__(self, posture_service) -> None:
+        self._posture = posture_service
+
+    def checks(self) -> list[dict]:
+        try:
+            report = self._posture.get_report()
+        except Exception:
+            logger.debug("posture checks unavailable", exc_info=True)
+            return []
+        out = []
+        for check in getattr(report, "checks", []):
+            out.append({
+                "id": check.id,
+                "status": getattr(check.status, "value", check.status),
+                "title": getattr(check, "title", None),
+                "severity": getattr(check.severity, "value", getattr(check, "severity", None)),
+                "category": getattr(check, "category", None),
+            })
+        return out
+
+
+class MachineInterfaceProvider:
+    """Satisfies `lanscan.InterfaceProvider`.
+
+    Only interfaces that are up and not loopback are reported. The default
+    provider reports none at all, which correctly rejects every scan, so
+    anything this adds is directly widening what a user is allowed to scan
+    and should stay as narrow as the truth allows: a down adapter's stale
+    APIPA address is not a subnet this machine is on.
+    """
+
+    def interfaces(self) -> list[dict]:
+        import ipaddress
+
+        out: list[dict] = []
+        try:
+            candidates = netinfo.list_interfaces()
+        except Exception:
+            logger.debug("interface enumeration failed", exc_info=True)
+            return []
+        for iface in candidates:
+            if not iface.get("is_up") or iface.get("is_loopback"):
+                continue
+            address, netmask = iface.get("ipv4"), iface.get("netmask")
+            if not address or not netmask:
+                continue
+            try:
+                prefixlen = ipaddress.IPv4Network(f"0.0.0.0/{netmask}").prefixlen
+            except ValueError:
+                continue
+            out.append({"address": address, "prefixlen": prefixlen})
+        return out
+
+
+class StoreTrafficProvider:
+    """Satisfies `baselines.TrafficProvider`.
+
+    `peers()` is external remote endpoints only. A baseline whose peer list
+    is dominated by loopback and LAN chatter diffs noisily against itself
+    and buries the one new internet destination that actually matters.
+
+    Deliberately *not* `store.flows.query_connections()`, which only returns
+    flows touched in the last 120 seconds. That is the right window for a
+    live connections table and the wrong one for a baseline: capture a
+    snapshot on a quiet minute and you would record an empty peer set, then
+    diff it later and see every normal destination reported as newly
+    appeared. `PEER_WINDOW_SECONDS` is a day, so a snapshot describes a
+    day's worth of who this machine talks to.
+    """
+
+    PEER_WINDOW_SECONDS = 24 * 60 * 60
+
+    def __init__(self, db_path: Path) -> None:
+        self.db_path = db_path
+
+    def peers(self) -> list[str]:
+        try:
+            import time
+
+            from .store import flows as flowmod
+
+            rows = flowmod.query_flows_since(
+                time.time() - self.PEER_WINDOW_SECONDS, db_path=self.db_path
+            )
+        except Exception:
+            logger.debug("baseline peers unavailable", exc_info=True)
+            return []
+        seen: set[str] = set()
+        for row in rows:
+            if not row["is_external"]:
+                continue
+            peer = row["remote_host"] or row["remote_addr"]
+            if peer:
+                seen.add(str(peer))
+        return sorted(seen)
+
+    def listeners(self) -> list[dict]:
+        """Read live from psutil rather than the packet store: a listening
+        socket that has never been talked to leaves no packets behind, and
+        those are precisely the ones worth baselining."""
+        try:
+            import psutil
+        except Exception:  # pragma: no cover - psutil is a hard dependency
+            return []
+        out: dict[int, dict] = {}
+        try:
+            for conn in psutil.net_connections(kind="inet"):
+                if conn.status != psutil.CONN_LISTEN or not conn.laddr:
+                    continue
+                port = conn.laddr.port
+                if port in out:
+                    continue
+                name = "unknown"
+                if conn.pid:
+                    try:
+                        name = psutil.Process(conn.pid).name()
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        name = "unknown"
+                out[port] = {"port": port, "process": name, "address": conn.laddr.ip}
+        except (psutil.AccessDenied, OSError):
+            logger.debug("listener enumeration denied", exc_info=True)
+            return []
+        return [out[p] for p in sorted(out)]
+
+
+class CompositeScoreProvider:
+    """Satisfies `baselines.ScoreProvider` by flattening posture's
+    `SecurityScoreResponse` into the three numbers baselines wants.
+
+    `threats` stays None when no threats component is present, rather than
+    becoming 0 -- "we did not measure it" and "we measured it and found
+    nothing" are different things and a baseline diff should not confuse
+    them.
+    """
+
+    def __init__(self, posture_service) -> None:
+        self._posture = posture_service
+
+    def security_score(self) -> dict:
+        try:
+            score = self._posture.get_security_score()
+        except Exception:
+            logger.debug("security score unavailable", exc_info=True)
+            return {"posture": 0, "threats": None, "overall": 0}
+        components = {c.id: c.score for c in getattr(score, "components", [])}
+        return {
+            "posture": int(components.get("posture") or 0),
+            "threats": components.get("threats"),
+            "overall": int(getattr(score, "overall", 0)),
+        }
+
+
+class LiveReportDataProvider:
+    """Satisfies `export.ReportDataProvider`.
+
+    Each method is deliberately a thin call onto the source of truth for
+    that section, returning the same shape the corresponding HTTP endpoint
+    returns, so a generated report and the live UI can never disagree about
+    what was found. Every one degrades to empty rather than raising: a
+    report with a missing section is far more useful than no report.
+    """
+
+    def __init__(self, posture_service, engine: ThreatEngine, db_path: Path) -> None:
+        self._posture = posture_service
+        self._engine = engine
+        self._db_path = db_path
+
+    def security_score(self) -> dict:
+        try:
+            return self._posture.get_security_score().model_dump()
+        except Exception:
+            logger.debug("report security score unavailable", exc_info=True)
+            return {}
+
+    def posture_report(self) -> dict:
+        try:
+            return self._posture.get_report().model_dump()
+        except Exception:
+            logger.debug("report posture unavailable", exc_info=True)
+            return {}
+
+    def threats(self) -> list[dict]:
+        try:
+            _total, threats = self._engine.list_threats(include_acknowledged=True, limit=1000)
+            return list(threats)
+        except Exception:
+            logger.debug("report threats unavailable", exc_info=True)
+            return []
+
+    def recommendations(self) -> list[dict]:
+        try:
+            from .rules import engine as rules_engine
+
+            return list(rules_engine.list_recommendations(db_path=self._db_path))
+        except Exception:
+            logger.debug("report recommendations unavailable", exc_info=True)
+            return []
+
+    def traffic_summary(self) -> dict:
+        try:
+            from .store import stats as statsmod
+
+            return statsmod.get_summary("5m", db_path=self._db_path)
+        except Exception:
+            logger.debug("report traffic summary unavailable", exc_info=True)
+            return {}
+
+    def devices(self) -> list[dict]:
+        try:
+            from .store import devices as devicesmod
+
+            return list(devicesmod.query_devices(db_path=self._db_path))
+        except Exception:
+            logger.debug("report devices unavailable", exc_info=True)
+            return []
+
+
+def wire_pro(app, db_path: Optional[Path] = None) -> None:
+    """Mount the professional-workflow packages (Parts E and F) and give
+    them live dependencies.
+
+    Must run after `wire_security`, because compliance, baselines and
+    reports all read from the posture service and threat engine that
+    function creates. Called from `wire_security` itself rather than from
+    `server.py` so the ordering cannot be got wrong from outside.
+
+    `pcap` and `export`'s storage already resolves to the same
+    `%LOCALAPPDATA%\\NetAudit\\` location the rest of the backend uses, so
+    those two routers need nothing but mounting.
+    """
+    from .alerts.router import router as alerts_router
+    from .alerts.service import AlertService, get_alert_service
+    from .baselines import providers as baseline_providers
+    from .baselines.router import router as baselines_router
+    from .baselines.service import BaselineService, get_baseline_service
+    from .compliance import providers as compliance_providers
+    from .compliance.router import router as compliance_router
+    from .export.provider import get_report_provider
+    from .export.router import router as export_router
+    from .lanscan import providers as lanscan_providers
+    from .lanscan.router import router as lanscan_router
+    from .pcap.router import router as pcap_router
+
+    db_path = db_path or getattr(app.state, "db_path", None) or config.DB_PATH
+    posture_service = app.state.posture_service
+    engine = app.state.threat_engine
+
+    posture_adapter = PostureChecksAdapter(posture_service)
+    interface_provider = MachineInterfaceProvider()
+    traffic_provider = StoreTrafficProvider(db_path)
+    score_provider = CompositeScoreProvider(posture_service)
+    report_provider = LiveReportDataProvider(posture_service, engine, db_path)
+
+    alert_service = AlertService(db_path=db_path)
+    baseline_service = BaselineService(db_path=db_path)
+
+    app.dependency_overrides[compliance_providers.get_posture_provider] = lambda: posture_adapter
+    app.dependency_overrides[baseline_providers.get_posture_provider] = lambda: posture_adapter
+    app.dependency_overrides[baseline_providers.get_traffic_provider] = lambda: traffic_provider
+    app.dependency_overrides[baseline_providers.get_score_provider] = lambda: score_provider
+    app.dependency_overrides[lanscan_providers.get_interface_provider] = lambda: interface_provider
+    app.dependency_overrides[get_report_provider] = lambda: report_provider
+    app.dependency_overrides[get_alert_service] = lambda: alert_service
+    app.dependency_overrides[get_baseline_service] = lambda: baseline_service
+
+    app.state.alert_service = alert_service
+    app.state.baseline_service = baseline_service
+    app.state.report_provider = report_provider
+
+    app.include_router(pcap_router)
+    app.include_router(export_router)
+    app.include_router(compliance_router)
+    app.include_router(alerts_router)
+    app.include_router(lanscan_router)
+    app.include_router(baselines_router)
+
+    logger.info(
+        "pro packages wired: pcap, export/reports, compliance, alerts, lanscan, baselines "
+        "(scannable interfaces: %d)",
+        len(interface_provider.interfaces()),
+    )
+
+
 def wire_security(app, db_path: Optional[Path] = None, start_background: bool = True) -> None:
     """Mount the posture and threat routers and give them live dependencies.
 
@@ -586,6 +879,8 @@ def wire_security(app, db_path: Optional[Path] = None, start_background: bool = 
     app.include_router(posture_router)
     app.include_router(threat_router)
     app.include_router(learn_router)
+
+    wire_pro(app, db_path=db_path)
 
     if start_background:
         arp_observer.start()

@@ -181,6 +181,18 @@ def synthesize_frame(packet: dict) -> tuple[bytes, int]:
 
     stack_len_no_payload = 14 + 20 + l4_no_payload_len
     payload_len = max(0, orig_len - stack_len_no_payload)
+    # IPv4's total-length field is 16 bits, so a single synthesised frame
+    # can never represent more than 65535 bytes of IP payload+headers
+    # regardless of how large the *real* observed `length` was (some
+    # tiers -- e.g. polling, which aggregates flow-derived byte counts --
+    # can report an observed length far larger than any single Ethernet
+    # frame). When that happens, the synthesised frame is capped here and
+    # `incl_len` ends up smaller than `orig_len`, exactly like a real
+    # snaplen truncation: still honest (orig_len keeps the true observed
+    # value; the payload we *do* write is still all zero, never
+    # fabricated), just incomplete -- never a struct-packing overflow.
+    max_payload_len = max(0, 65535 - 20 - l4_no_payload_len)
+    payload_len = min(payload_len, max_payload_len)
     payload = b"\x00" * payload_len
 
     eth_header = FAKE_DST_MAC + FAKE_SRC_MAC + struct.pack("!H", ETHERTYPE_IPV4)
@@ -197,13 +209,31 @@ def synthesize_frame(packet: dict) -> tuple[bytes, int]:
     return _pad_to(frame, orig_len), orig_len
 
 
+# The largest a single synthesised Ethernet+IPv4 frame could honestly be
+# (14-byte Ethernet header + the IPv4 total-length field's 16-bit max).
+# Real captured data on some tiers -- notably polling, which stores
+# flow-aggregated byte counts rather than per-frame lengths -- can report
+# an observed `length` far beyond any single real frame (confirmed against
+# the live database while building this module: some rows report lengths
+# in the tens of thousands to millions of bytes). Without this cap,
+# `_pad_to` would zero-pad to match, silently allocating an arbitrarily
+# large buffer for what is, at that point, aggregate traffic-volume data
+# rather than a single packet's length -- a memory/disk risk with no
+# honesty benefit (the padding is already "not real data" either way).
+MAX_SYNTHESIZED_FRAME_LEN = 14 + 65535
+
+
 def _pad_to(stack: bytes, orig_len: int) -> bytes:
     """Zero-pad `stack` up to orig_len if there's room; otherwise (an
     implausibly small observed length) truncate the header stack itself so
     incl_len never exceeds orig_len. Either way, no fabricated content --
-    only zeros or a shorter (but still honest) header prefix."""
+    only zeros or a shorter (but still honest) header prefix. Padding is
+    capped at MAX_SYNTHESIZED_FRAME_LEN regardless of how large orig_len
+    claims to be; incl_len then simply ends up smaller than orig_len,
+    exactly like a real snaplen truncation."""
     if orig_len <= 0:
         return b""
-    if len(stack) < orig_len:
-        return stack + b"\x00" * (orig_len - len(stack))
-    return stack[:orig_len]
+    target_len = min(orig_len, MAX_SYNTHESIZED_FRAME_LEN)
+    if len(stack) < target_len:
+        return stack + b"\x00" * (target_len - len(stack))
+    return stack[:target_len]
