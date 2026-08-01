@@ -57,6 +57,15 @@ function App() {
     setView(VIEW_ID_ALIASES[next] ?? next);
   }, []);
 
+  const openExplainNetwork = useCallback(() => {
+    if (view === "learn-explain-network") {
+      document.getElementById("main-content")?.scrollTo({ top: 0 });
+      return;
+    }
+
+    setView("learn-explain-network");
+  }, [view]);
+
   // Fetch the local auth token once at startup (docs/API_CONTRACT_V2_SECURITY.md
   // Part C item 2) so it's already cached before the first real REST/WS call.
   // Skipped in forced mock mode; failures here are swallowed because every
@@ -80,7 +89,7 @@ function App() {
           connectionState={connectionState}
           theme={theme}
           onToggleTheme={toggleTheme}
-          onExplainNetwork={() => setView("learn-explain-network")}
+          onExplainNetwork={openExplainNetwork}
           learningMode={learningMode}
           onToggleLearningMode={toggleLearningMode}
         />

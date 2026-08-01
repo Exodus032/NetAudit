@@ -17,7 +17,7 @@ const CHAPTERS: Chapter[] = [
     id: "overview",
     title: "Start with the overview",
     description:
-      "The overview turns the latest observations into a short picture of what NetAudit found, so you can decide where to look next.",
+      "The overview summarizes traffic, active connections, the capture tier, and the security score. The score is a starting point for review, not a verdict.",
     actions: [{ label: "Open overview", view: "overview" }],
   },
   {
@@ -34,7 +34,7 @@ const CHAPTERS: Chapter[] = [
     id: "findings",
     title: "Understand the findings",
     description:
-      "Recommendations suggest practical improvements. Security posture checks your setup, while threats call out activity that may need closer attention.",
+      "Recommendations, security posture, and threats provide evidence to review. These findings are prompts to investigate, not proof that a problem exists.",
     actions: [
       { label: "Open recommended actions", view: "recommendations" },
       { label: "Open security posture", view: "posture" },
