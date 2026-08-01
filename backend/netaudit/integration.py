@@ -241,27 +241,43 @@ class ThreatScheduler:
         self.alerts_sent = 0
         self.run_count = 0
         self.suppressed_detectors: tuple[str, ...] = ()
-        self._suppression_applied = False
+        self._last_capture_mode: Optional[str] = None
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
 
     def apply_tier_suppression(self) -> tuple[str, ...]:
-        """Disable timing-based detectors while the polling tier is active.
+        """Disable timing-based detectors while the polling tier is active,
+        and re-enable them once a real capture tier is back.
 
-        Done once, lazily, because the capture tier is not settled until the
-        pipeline has actually started. Uses the engine's own patch path so
-        the change is persisted and visible in `/api/threats/detectors`
-        rather than hidden -- the user can see exactly what is switched off
-        and turn it back on if they disagree.
+        Runs at the top of every pass but only acts on a *transition*
+        between capture modes, for two reasons. First, the capture tier is
+        not settled until the pipeline has actually started: the mode
+        callback returns None until then, and treating that unknown state
+        as "not polling" would re-enable timing detectors and latch that
+        decision just before the tier degrades to polling. Second, a run
+        can genuinely change tier mid-flight (an npcap capture dying falls
+        back to polling), and a once-per-process decision would leave
+        `c2_beaconing` running against sampled data. Acting only on
+        transitions also means a user who disables a detector by hand on a
+        real capture tier is not fought every pass -- the restore fires
+        once per polling -> real-tier transition, not continuously.
+
+        Uses the engine's own patch path so the change is persisted and
+        visible in `/api/threats/detectors` rather than hidden.
         """
-        if self._suppression_applied or self.capture_mode is None:
+        if self.capture_mode is None:
             return self.suppressed_detectors
         try:
             mode = self.capture_mode()
         except Exception:
-            return ()
+            return self.suppressed_detectors
+        if mode is None or mode == self._last_capture_mode:
+            # Tier not settled yet, or no change since the last pass.
+            return self.suppressed_detectors
+        self._last_capture_mode = mode
         if mode != "polling":
-            self._suppression_applied = True
+            self._restore_timing_detectors()
+            self.suppressed_detectors = ()
             return ()
 
         suppressed = []
@@ -269,7 +285,6 @@ class ThreatScheduler:
             _updated, error = self.engine.patch_detector(detector_id, {"enabled": False})
             if error is None:
                 suppressed.append(detector_id)
-        self._suppression_applied = True
         self.suppressed_detectors = tuple(suppressed)
         if suppressed:
             logger.info(
@@ -279,6 +294,39 @@ class ThreatScheduler:
                 ", ".join(suppressed),
             )
         return self.suppressed_detectors
+
+    def _restore_timing_detectors(self) -> tuple[str, ...]:
+        """Re-enable timing-based detectors a previous polling-tier run
+        disabled, now that a real capture tier is active.
+
+        The persisted detector state is a bare `enabled` flag
+        (`detector_settings.enabled`) with no record of *who* disabled it,
+        so a detector the user switched off by hand is indistinguishable
+        from one `apply_tier_suppression` switched off on an earlier
+        polling run. The README promises elevation gets the detector back,
+        so on a non-polling tier any disabled timing detector is re-enabled
+        unconditionally. A user who wants it off on a real capture tier can
+        disable it again and it will stay off for the rest of the process.
+        """
+        try:
+            currently_enabled = {d["id"]: d.get("enabled", True) for d in self.engine.list_detectors()}
+        except Exception:
+            logger.debug("could not list detectors to restore tier suppression", exc_info=True)
+            return ()
+        restored = []
+        for detector_id in TIMING_DEPENDENT_DETECTORS:
+            if currently_enabled.get(detector_id, True):
+                continue
+            _updated, error = self.engine.patch_detector(detector_id, {"enabled": True})
+            if error is None:
+                restored.append(detector_id)
+        if restored:
+            logger.info(
+                "capture tier is not 'polling'; re-enabled timing-based detector(s) %s "
+                "that a previous polling-tier run had disabled",
+                ", ".join(restored),
+            )
+        return tuple(restored)
 
     def run_once(self) -> int:
         """Returns the number of threats touched by this pass. Never raises
@@ -639,14 +687,22 @@ class PostureChecksAdapter:
     Emits plain dicts rather than posture's pydantic models: that is the
     whole point of those Protocols, and it means a check gaining a field
     never ripples into compliance or baselines.
+
+    `fresh=True` forces a full posture rescan on every `checks()` call
+    instead of serving the boot-time cache. The baseline monitor's
+    scheduled captures use that mode: they exist to detect drift over
+    hours and days, and diffing the same cached report against itself can
+    never see any. Interactive API reads (compliance, on-demand baseline
+    capture) keep the default cached mode so they stay fast.
     """
 
-    def __init__(self, posture_service) -> None:
+    def __init__(self, posture_service, fresh: bool = False) -> None:
         self._posture = posture_service
+        self._fresh = fresh
 
     def checks(self) -> list[dict]:
         try:
-            report = self._posture.get_report()
+            report = self._posture.rescan() if self._fresh else self._posture.get_report()
         except Exception:
             logger.debug("posture checks unavailable", exc_info=True)
             return []
@@ -893,6 +949,13 @@ def wire_pro(app, db_path: Optional[Path] = None) -> None:
     engine = app.state.threat_engine
 
     posture_adapter = PostureChecksAdapter(posture_service)
+    # The scheduled monitor gets its own adapter that forces a rescan per
+    # capture: a drift detector fed the boot-time cached report would diff
+    # the same data forever and never fire. The monitor already runs
+    # `run_once` off the event loop (asyncio.to_thread) and the posture
+    # service bounds each scan to its own wall-clock budget, so the extra
+    # seconds per capture cost nothing but that thread's time.
+    monitor_posture_adapter = PostureChecksAdapter(posture_service, fresh=True)
     interface_provider = MachineInterfaceProvider()
     traffic_provider = StoreTrafficProvider(db_path)
     score_provider = CompositeScoreProvider(posture_service)
@@ -902,7 +965,7 @@ def wire_pro(app, db_path: Optional[Path] = None) -> None:
     baseline_service = BaselineService(db_path=db_path)
     baseline_monitor = BaselineMonitor(
         baseline_service,
-        posture_adapter,
+        monitor_posture_adapter,
         traffic_provider,
         score_provider,
         alert_service,

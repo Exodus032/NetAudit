@@ -293,11 +293,17 @@ class TestPollingTierSuppression:
     series and `c2_beaconing` fires on our own sampling artefact."""
 
     class _RecordingEngine:
-        def __init__(self):
+        def __init__(self, enabled=None):
             self.patched = []
+            self._enabled = {"c2_beaconing": True, **(enabled or {})}
+
+        def list_detectors(self):
+            return [{"id": detector_id, "enabled": on} for detector_id, on in self._enabled.items()]
 
         def patch_detector(self, detector_id, body):
             self.patched.append((detector_id, body))
+            if "enabled" in body:
+                self._enabled[detector_id] = body["enabled"]
             return {"id": detector_id}, None
 
         def run_once(self):
@@ -327,6 +333,95 @@ class TestPollingTierSuppression:
         scheduler.apply_tier_suppression()
         scheduler.apply_tier_suppression()
         assert len(engine.patched) == 1
+
+    @pytest.mark.parametrize("mode", ["npcap", "rawsocket"])
+    def test_elevated_tier_reenables_a_previously_suppressed_detector(self, mode):
+        """Regression: suppression persisted `enabled=False`, but nothing
+        ever undid it, so one polling run switched `c2_beaconing` off for
+        good and the README's 'run elevated to get it back' was a lie. The
+        persisted state is a bare enabled flag with no record of who
+        disabled it, so on a real capture tier any disabled timing
+        detector is re-enabled unconditionally."""
+        engine = self._RecordingEngine(enabled={"c2_beaconing": False})
+        scheduler = integration.ThreatScheduler(engine, capture_mode=lambda: mode)
+
+        assert scheduler.apply_tier_suppression() == ()
+        assert engine.patched == [("c2_beaconing", {"enabled": True})]
+
+    def test_restore_is_applied_only_once(self):
+        engine = self._RecordingEngine(enabled={"c2_beaconing": False})
+        scheduler = integration.ThreatScheduler(engine, capture_mode=lambda: "npcap")
+        scheduler.apply_tier_suppression()
+        scheduler.apply_tier_suppression()
+        assert len(engine.patched) == 1
+
+    def test_unsettled_mode_does_not_latch_a_decision(self):
+        """Regression: the mode callback returns None until the capture
+        pipeline has started. Treating that as 'not polling' re-enabled
+        timing detectors and latched the decision just before the tier
+        settled to polling, letting c2_beaconing run against sampled data
+        for the whole process lifetime."""
+        engine = self._RecordingEngine()
+        modes = iter([None, None, "polling"])
+        scheduler = integration.ThreatScheduler(engine, capture_mode=lambda: next(modes))
+
+        assert scheduler.apply_tier_suppression() == ()
+        assert scheduler.apply_tier_suppression() == ()
+        assert engine.patched == []
+        assert scheduler.apply_tier_suppression() == ("c2_beaconing",)
+        assert engine.patched == [("c2_beaconing", {"enabled": False})]
+
+    def test_mid_run_degrade_to_polling_suppresses(self):
+        """Regression: an npcap capture dying mid-run falls back to the
+        polling tier; the old once-per-process check never re-evaluated,
+        leaving c2_beaconing on against sampled data."""
+        engine = self._RecordingEngine()
+        modes = iter(["npcap", "npcap", "polling"])
+        scheduler = integration.ThreatScheduler(engine, capture_mode=lambda: next(modes))
+
+        scheduler.apply_tier_suppression()
+        scheduler.apply_tier_suppression()
+        assert engine.patched == []
+        assert scheduler.apply_tier_suppression() == ("c2_beaconing",)
+
+    def test_manual_disable_on_a_real_tier_is_not_fought(self):
+        """The restore fires once per transition to a real tier, so a user
+        who then switches a timing detector off by hand stays in control
+        for the rest of the process."""
+        engine = self._RecordingEngine(enabled={"c2_beaconing": False})
+        scheduler = integration.ThreatScheduler(engine, capture_mode=lambda: "npcap")
+
+        scheduler.apply_tier_suppression()
+        assert engine._enabled["c2_beaconing"] is True
+        engine.patch_detector("c2_beaconing", {"enabled": False})  # user turns it off
+        scheduler.apply_tier_suppression()
+        assert engine._enabled["c2_beaconing"] is False
+
+    def test_suppression_round_trips_through_the_store_across_restarts(self, tmp_path):
+        """polling run -> restart elevated -> detector is back, and the
+        re-enable itself survives the next restart."""
+        from netaudit.threat.engine import ThreatEngine
+        from netaudit.threat.source import ListTrafficSource
+        from netaudit.threat.store import ThreatStore, reset_for_tests
+
+        db = tmp_path / "threat-tier.db"
+        try:
+            polling_engine = ThreatEngine(ListTrafficSource(), ThreatStore(db))
+            integration.ThreatScheduler(polling_engine, capture_mode=lambda: "polling").apply_tier_suppression()
+
+            elevated_engine = ThreatEngine(ListTrafficSource(), ThreatStore(db))
+            enabled = {d["id"]: d["enabled"] for d in elevated_engine.list_detectors()}
+            assert enabled["c2_beaconing"] is False, "suppression must persist across the restart"
+
+            integration.ThreatScheduler(elevated_engine, capture_mode=lambda: "npcap").apply_tier_suppression()
+            enabled = {d["id"]: d["enabled"] for d in elevated_engine.list_detectors()}
+            assert enabled["c2_beaconing"] is True
+
+            next_engine = ThreatEngine(ListTrafficSource(), ThreatStore(db))
+            enabled = {d["id"]: d["enabled"] for d in next_engine.list_detectors()}
+            assert enabled["c2_beaconing"] is True
+        finally:
+            reset_for_tests(db)
 
     def test_unavailable_capture_mode_is_not_fatal(self):
         engine = self._RecordingEngine()
@@ -516,6 +611,49 @@ class TestBaselineMonitorLifespan:
         assert monitors[0].service is app.state.baseline_service
         assert monitors[0].dispatcher is app.state.alert_service
         assert app.dependency_overrides[get_baseline_monitor]() is monitors[0]
+
+    def test_wire_pro_gives_the_monitor_a_fresh_posture_adapter_and_the_api_the_cached_one(self, tmp_path, monkeypatch):
+        """Regression: the monitor shared the API's cached adapter, so a
+        scheduled capture snapshotted the boot-time posture report forever
+        and unattended drift detection was structurally impossible."""
+        from fastapi import FastAPI
+        from netaudit.baselines import providers as baseline_providers
+
+        monitors = []
+
+        class RecordingMonitor:
+            def __init__(self, service, posture, traffic, score, dispatcher, clock):
+                self.posture = posture
+                monitors.append(self)
+
+        class RecordingPostureService:
+            def __init__(self):
+                self.rescans = 0
+                self.cache_reads = 0
+
+            def rescan(self):
+                self.rescans += 1
+                return type("Report", (), {"checks": []})()
+
+            def get_report(self):
+                self.cache_reads += 1
+                return type("Report", (), {"checks": []})()
+
+        monkeypatch.setattr("netaudit.baselines.monitor.BaselineMonitor", RecordingMonitor)
+        app = FastAPI()
+        app.state.db_path = tmp_path / "netaudit.db"
+        posture_service = RecordingPostureService()
+        app.state.posture_service = posture_service
+        app.state.threat_engine = object()
+
+        integration.wire_pro(app)
+
+        monitors[0].posture.checks()
+        assert (posture_service.rescans, posture_service.cache_reads) == (1, 0)
+
+        api_adapter = app.dependency_overrides[baseline_providers.get_posture_provider]()
+        api_adapter.checks()
+        assert (posture_service.rescans, posture_service.cache_reads) == (1, 1)
 
 
 class TestWiredApp:
@@ -761,15 +899,39 @@ class TestProAdapters:
         result = integration.CompositeScoreProvider(_Posture()).security_score()
         assert result == {"posture": 70, "threats": None, "overall": 62}
 
+    def test_posture_adapter_fresh_mode_rescans_instead_of_reading_the_cache(self):
+        class _Recording:
+            def __init__(self):
+                self.rescans = 0
+                self.cache_reads = 0
+
+            def rescan(self):
+                self.rescans += 1
+                return type("Report", (), {"checks": []})()
+
+            def get_report(self):
+                self.cache_reads += 1
+                return type("Report", (), {"checks": []})()
+
+        service = _Recording()
+        assert integration.PostureChecksAdapter(service).checks() == []
+        assert (service.rescans, service.cache_reads) == (0, 1)
+        assert integration.PostureChecksAdapter(service, fresh=True).checks() == []
+        assert (service.rescans, service.cache_reads) == (1, 1)
+
     def test_adapters_degrade_to_empty_rather_than_raising(self):
         class _Broken:
             def get_report(self):
+                raise RuntimeError("posture exploded")
+
+            def rescan(self):
                 raise RuntimeError("posture exploded")
 
             def get_security_score(self):
                 raise RuntimeError("posture exploded")
 
         assert integration.PostureChecksAdapter(_Broken()).checks() == []
+        assert integration.PostureChecksAdapter(_Broken(), fresh=True).checks() == []
         assert integration.CompositeScoreProvider(_Broken()).security_score() == {
             "posture": 0, "threats": None, "overall": 0,
         }

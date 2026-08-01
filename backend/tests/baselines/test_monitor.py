@@ -434,3 +434,46 @@ def test_failed_capture_retries_after_interval_unless_woken(db_path):
     assert inputs.capture_calls == calls_after_failure
     monitor.wake()
     assert monitor.run_once(now=iso(START + timedelta(hours=1))).captured is True
+
+
+def test_scheduled_capture_rescans_posture_instead_of_serving_the_cache(db_path):
+    """Regression: the monitor's posture provider used to serve the
+    boot-time cached report, so every scheduled snapshot froze the same
+    posture data and drift alerts could never fire. The wiring in
+    `integration.wire_pro` gives the monitor a `fresh=True` adapter; this
+    proves that adapter forces a rescan per due capture."""
+    from netaudit.integration import PostureChecksAdapter
+
+    class RecordingPostureService:
+        def __init__(self) -> None:
+            self.rescans = 0
+            self.cache_reads = 0
+
+        def rescan(self):
+            self.rescans += 1
+            return type("Report", (), {"checks": []})()
+
+        def get_report(self):
+            self.cache_reads += 1
+            return type("Report", (), {"checks": []})()
+
+    service = BaselineService(db_path)
+    service.update_schedule(enabled=True, interval_hours=6)
+    posture_service = RecordingPostureService()
+    inputs = Inputs()
+    monitor = BaselineMonitor(
+        service,
+        PostureChecksAdapter(posture_service, fresh=True),
+        inputs,
+        inputs,
+        RecordingDispatcher(),
+        clock=lambda: iso(START),
+    )
+
+    assert monitor.run_once().captured is True
+    assert posture_service.rescans == 1
+    assert posture_service.cache_reads == 0
+
+    # Not due again for six hours: no capture, so no extra scan either.
+    assert monitor.run_once(now=iso(START + timedelta(hours=1))).captured is False
+    assert posture_service.rescans == 1
