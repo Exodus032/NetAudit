@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable, Optional, Protocol
@@ -47,38 +48,39 @@ class BaselineMonitor:
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._stopping = False
         self._task: Optional[asyncio.Task[None]] = None
+        self._retry_not_before: Optional[float] = None
+        self._retry_wake = threading.Event()
 
     def run_once(self, now: Optional[str] = None) -> MonitorResult:
         """Capture a due snapshot and report material change from its predecessor."""
         current = self._canonical_time(now if now is not None else self._clock())
         current_seconds = parse_iso(current)
-        try:
-            schedule = self._service.get_schedule()
-            if not schedule.enabled:
+        if self._retry_not_before is not None and current_seconds < self._retry_not_before:
+            if not self._retry_wake.is_set():
                 return MonitorResult(captured=False, alerted=False)
-            if schedule.last_success_at is not None:
-                due_at = parse_iso(schedule.last_success_at) + schedule.interval_hours * 3600
-                if current_seconds < due_at:
-                    return MonitorResult(captured=False, alerted=False)
-
-            previous_id = self._service.latest_scheduled_id()
-            created = self._service.create_scheduled(
+        self._retry_wake.clear()
+        try:
+            capture = self._service.capture_scheduled_if_due(
                 self._posture,
                 self._traffic,
                 self._score,
                 captured_at=current,
             )
+            if capture is None:
+                return MonitorResult(captured=False, alerted=False)
+
+            self._retry_not_before = None
             alerted = False
             try:
-                if previous_id is not None:
-                    diff = self._service.diff(previous_id, created.id)
+                if capture.previous_id is not None:
+                    diff = self._service.diff(capture.previous_id, capture.baseline.id)
                     if diff is not None:
                         categories = self._alert_categories(diff)
                         if categories:
                             self._dispatcher.dispatch(
                                 severity="high",
                                 source="scheduled_baseline",
-                                source_id=created.id,
+                                source_id=capture.baseline.id,
                                 title=f"Scheduled baseline: {', '.join(categories)}",
                             )
                             alerted = True
@@ -88,7 +90,8 @@ class BaselineMonitor:
         except Exception as exc:
             error = self._bounded_error(exc)
             try:
-                self._service.record_schedule_error(error)
+                schedule = self._service.record_schedule_error(error)
+                self._retry_not_before = current_seconds + schedule.interval_hours * 3600
             except Exception:
                 pass
             return MonitorResult(captured=False, alerted=False, error=error)
@@ -99,10 +102,12 @@ class BaselineMonitor:
             return
         self._stopping = False
         self._loop = asyncio.get_running_loop()
+        self._wake = asyncio.Event()
         self._task = self._loop.create_task(self._run(), name="netaudit-baseline-monitor")
 
     def wake(self) -> None:
         """Interrupt the current wait so changed schedule state takes effect."""
+        self._retry_wake.set()
         loop = self._loop
         if loop is not None and not loop.is_closed():
             loop.call_soon_threadsafe(self._wake.set)
@@ -149,10 +154,15 @@ class BaselineMonitor:
         try:
             schedule = self._service.get_schedule()
             interval = float(schedule.interval_hours * 3600)
-            if not schedule.enabled or schedule.last_success_at is None:
+            if not schedule.enabled:
+                return interval
+            now = parse_iso(self._canonical_time(self._clock()))
+            if self._retry_not_before is not None:
+                return max(0.0, min(interval, self._retry_not_before - now))
+            if schedule.last_success_at is None:
                 return interval
             due_at = parse_iso(schedule.last_success_at) + interval
-            return max(0.0, min(interval, due_at - parse_iso(self._canonical_time(self._clock()))))
+            return max(0.0, min(interval, due_at - now))
         except Exception:
             return 60.0
 

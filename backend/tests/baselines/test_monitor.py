@@ -366,3 +366,71 @@ def test_cancelled_shutdown_drains_inflight_capture_before_reraising(db_path):
         assert monitor._task is None
 
     asyncio.run(scenario())
+
+
+def test_monitor_restarts_on_a_fresh_event_loop_after_shutdown(db_path):
+    monitor, service, inputs, _, _ = make_monitor(db_path, enabled=False)
+    first_wake = monitor._wake
+
+    async def first_lifecycle() -> None:
+        monitor.start()
+        await asyncio.sleep(0.02)
+        await monitor.shutdown()
+
+    async def second_lifecycle() -> None:
+        service.update_schedule(enabled=True, interval_hours=6)
+        monitor.start()
+        assert monitor._wake is not first_wake
+        monitor.wake()
+        assert await asyncio.to_thread(inputs.captured.wait, 1)
+        await monitor.shutdown()
+
+    asyncio.run(first_lifecycle())
+    asyncio.run(second_lifecycle())
+
+
+def test_concurrent_monitors_capture_and_alert_once_per_due_interval(db_path):
+    seed, service, _, _, _ = make_monitor(db_path)
+    seed.run_once(now=iso(START))
+    first_inputs = Inputs()
+    first_inputs.check_values = [{"id": "firewall", "status": "fail"}]
+    second_inputs = Inputs()
+    second_inputs.check_values = [{"id": "firewall", "status": "fail"}]
+    dispatcher = RecordingDispatcher()
+    first = BaselineMonitor(service, first_inputs, first_inputs, first_inputs, dispatcher, clock=lambda: iso(START))
+    second = BaselineMonitor(service, second_inputs, second_inputs, second_inputs, dispatcher, clock=lambda: iso(START))
+    barrier = threading.Barrier(3)
+    results: list[MonitorResult | None] = [None, None]
+
+    def capture(index: int, monitor: BaselineMonitor) -> None:
+        barrier.wait()
+        results[index] = monitor.run_once(now=iso(START + timedelta(hours=6)))
+
+    threads = [
+        threading.Thread(target=capture, args=(0, first)),
+        threading.Thread(target=capture, args=(1, second)),
+    ]
+    for thread in threads:
+        thread.start()
+    barrier.wait()
+    for thread in threads:
+        thread.join()
+
+    assert [result.captured for result in results] == [True, False] or [result.captured for result in results] == [False, True]
+    assert len(scheduled(service)) == 2
+    assert len(dispatcher.calls) == 1
+
+
+def test_failed_capture_retries_after_interval_unless_woken(db_path):
+    monitor, _, inputs, _, _ = make_monitor(db_path)
+    inputs.fail = True
+
+    failed = monitor.run_once(now=iso(START))
+    calls_after_failure = inputs.capture_calls
+    inputs.fail = False
+
+    assert failed.error == "provider unavailable"
+    assert monitor.run_once(now=iso(START + timedelta(hours=1))).captured is False
+    assert inputs.capture_calls == calls_after_failure
+    monitor.wake()
+    assert monitor.run_once(now=iso(START + timedelta(hours=1))).captured is True

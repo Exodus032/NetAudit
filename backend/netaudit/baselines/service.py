@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import threading
+from dataclasses import dataclass
 from typing import Optional
 
 from ..timeutil import iso_z, parse_iso
@@ -33,6 +34,12 @@ from .store import (
 )
 
 _scheduled_capture_lock = threading.Lock()
+
+
+@dataclass(frozen=True)
+class ScheduledCapture:
+    baseline: BaselineListItem
+    previous_id: Optional[str]
 
 # Ordering of "badness" for a check status, used to classify a status
 # transition as fixed/regressed. error/skipped are deliberately excluded --
@@ -201,6 +208,25 @@ class BaselineService:
     def diff(self, from_id: str, to_id: str) -> Optional[BaselineDiff]:
         return diff_baselines(from_id, to_id, self._db_path)
 
+    def _create_scheduled(
+        self,
+        posture: PostureProvider,
+        traffic: TrafficProvider,
+        score: ScoreProvider,
+        captured_at: str,
+    ) -> BaselineListItem:
+        record = capture_snapshot(
+            "Scheduled baseline",
+            posture,
+            traffic,
+            score,
+            self._db_path,
+            origin="scheduled",
+            captured_at=captured_at,
+        )
+        mark_schedule_success(record.captured_at, self._db_path)
+        return _record_to_list_item(record)
+
     def create_scheduled(
         self,
         posture: PostureProvider,
@@ -209,24 +235,32 @@ class BaselineService:
         captured_at: str,
     ) -> BaselineListItem:
         with _scheduled_capture_lock:
-            record = capture_snapshot(
-                "Scheduled baseline",
-                posture,
-                traffic,
-                score,
-                self._db_path,
-                origin="scheduled",
-                captured_at=captured_at,
-            )
-            mark_schedule_success(record.captured_at, self._db_path)
-        return _record_to_list_item(record)
+            return self._create_scheduled(posture, traffic, score, captured_at)
+
+    def capture_scheduled_if_due(
+        self,
+        posture: PostureProvider,
+        traffic: TrafficProvider,
+        score: ScoreProvider,
+        captured_at: str,
+    ) -> Optional[ScheduledCapture]:
+        """Atomically decide due state and capture one scheduled snapshot."""
+        current = parse_iso(captured_at)
+        with _scheduled_capture_lock:
+            schedule = get_schedule(self._db_path)
+            if not schedule.enabled:
+                return None
+            if schedule.last_success_at is not None:
+                due_at = parse_iso(schedule.last_success_at) + schedule.interval_hours * 3600
+                if current < due_at:
+                    return None
+            previous = get_most_recent_scheduled_baseline(self._db_path)
+            baseline = self._create_scheduled(posture, traffic, score, captured_at)
+            return ScheduledCapture(baseline=baseline, previous_id=previous.id if previous is not None else None)
 
     def prune_scheduled(self, cutoff: str) -> int:
         return delete_scheduled_before(cutoff, self._db_path)
 
-    def latest_scheduled_id(self) -> Optional[str]:
-        latest = get_most_recent_scheduled_baseline(self._db_path)
-        return latest.id if latest is not None else None
 
     def record_schedule_error(self, error: str) -> BaselineScheduleResponse:
         mark_schedule_error(error, self._db_path)
