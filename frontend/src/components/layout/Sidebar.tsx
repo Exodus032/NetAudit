@@ -32,9 +32,10 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
 
 export const ALL_NAV_ITEMS: NavItem[] = NAV_SECTIONS.flatMap((s) => s.items);
 
-export const VIEW_TITLES: Record<string, string> = Object.fromEntries(
-  ALL_NAV_ITEMS.map((item) => [item.id, item.label]),
-);
+export const VIEW_TITLES: Record<string, string> = {
+  ...Object.fromEntries(ALL_NAV_ITEMS.map((item) => [item.id, item.label])),
+  "learn-explain-network": "Explain my network",
+};
 
 export function Sidebar({ active, onChange }: { active: ViewId; onChange: (v: ViewId) => void }) {
   return (

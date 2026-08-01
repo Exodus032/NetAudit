@@ -80,6 +80,7 @@ function App() {
           connectionState={connectionState}
           theme={theme}
           onToggleTheme={toggleTheme}
+          onExplainNetwork={() => setView("learn-explain-network")}
           learningMode={learningMode}
           onToggleLearningMode={toggleLearningMode}
         />

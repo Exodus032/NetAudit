@@ -74,7 +74,8 @@
   background: var(--surface-2);
 }
 
-.learn-toggle {
+.learn-toggle,
+.explain-network-toggle {
   height: 30px;
   padding: 0 10px;
   display: inline-flex;
@@ -88,7 +89,8 @@
   font-size: 12px;
   font-weight: 500;
 }
-.learn-toggle:hover {
+.learn-toggle:hover,
+.explain-network-toggle:hover {
   background: var(--surface-2);
 }
 .learn-toggle.on {
@@ -97,4 +99,21 @@
 }
 .learn-toggle span {
   font-weight: 700;
+}
+
+@media (max-width: 720px) {
+  .app-header {
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .app-header-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .conn-indicator {
+    display: none;
+  }
 }
