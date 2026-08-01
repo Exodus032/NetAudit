@@ -352,6 +352,40 @@ them, so a professional can answer "what changed since last month?".
 }
 ```
 
+### E8.1 Scheduled baseline monitoring — `GET`/`PUT /api/baselines/schedule`
+
+Scheduled monitoring is opt-in and runs only while NetAudit's local backend
+process is running. It does not install, start, or depend on a separate
+operating-system scheduler or service.
+
+`GET /api/baselines/schedule` returns exactly:
+
+```json
+{
+  "enabled": false,
+  "interval_hours": 24,
+  "last_succeeded_at": null,
+  "next_due_at": null,
+  "last_error": null
+}
+```
+
+`PUT /api/baselines/schedule` accepts:
+
+```json
+{
+  "enabled": true,
+  "interval_hours": 24
+}
+```
+
+`interval_hours` must be exactly one of `6`, `12`, `24`, `48`, or `168`.
+
+The first successful scheduled capture establishes a reference and is never
+alerting. Only scheduled records are retained for 90 days. A later scheduled
+capture is alert-eligible only when it detects a posture regression, a decrease
+in the overall score, or a new listener.
+
 ---
 
 # Part F — Compliance and alerting
