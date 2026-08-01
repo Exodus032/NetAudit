@@ -449,6 +449,44 @@ class TestBaselineMonitorLifespan:
         assert pipeline.start_count == 0
         assert pipeline.background_task_count == 0
 
+    def test_capture_start_failure_does_not_start_monitor(self, tmp_path):
+        from netaudit.server import create_app
+
+        events = []
+
+        class RecordingMonitor:
+            def start(self):
+                events.append("monitor.start")
+
+            async def shutdown(self):
+                events.append("monitor.shutdown")
+
+        class FailingPipeline:
+            def start(self):
+                events.append("pipeline.start")
+
+            def spawn_background_tasks(self):
+                events.append("pipeline.spawn_background_tasks")
+                raise RuntimeError("capture startup failed")
+
+            async def shutdown(self):
+                events.append("pipeline.shutdown")
+
+        app = create_app(
+            db_path=tmp_path / "netaudit.db",
+            token_path=tmp_path / "token",
+            autostart_capture=True,
+            wire_security_packages=False,
+        )
+        app.state.baseline_monitor = RecordingMonitor()
+        app.state.pipeline = FailingPipeline()
+
+        with pytest.raises(RuntimeError, match="capture startup failed"):
+            with TestClient(app):
+                pass
+
+        assert events == ["pipeline.start", "pipeline.spawn_background_tasks"]
+
     def test_wire_pro_composes_one_monitor_with_shared_live_dependencies(self, tmp_path, monkeypatch):
         from fastapi import FastAPI
         from netaudit.baselines.router import get_baseline_monitor
