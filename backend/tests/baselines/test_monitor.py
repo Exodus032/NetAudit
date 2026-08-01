@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from netaudit.baselines.monitor import BaselineMonitor
+from netaudit.baselines.monitor import BaselineMonitor, MonitorResult
 from netaudit.baselines.service import BaselineService
 
 
@@ -225,5 +225,113 @@ def test_async_start_is_idempotent_wake_interrupts_wait_and_shutdown_stops_captu
         monitor.wake()
         await asyncio.sleep(0.02)
         assert inputs.capture_calls == before_shutdown
+
+    asyncio.run(scenario())
+
+
+
+def test_retention_diff_uses_old_scheduled_snapshot_before_pruning(db_path):
+    monitor, service, inputs, dispatcher, _ = make_monitor(db_path)
+    old_inputs = Inputs()
+    old_inputs.check_values = [{"id": "firewall", "status": "pass"}]
+    service.create_scheduled(
+        old_inputs,
+        old_inputs,
+        old_inputs,
+        captured_at=iso(START - timedelta(days=91)),
+    )
+    inputs.check_values = [{"id": "firewall", "status": "fail"}]
+
+    result = monitor.run_once(now=iso(START))
+
+    assert result.alerted is True
+    assert len(dispatcher.calls) == 1
+    assert "regressed checks" in dispatcher.calls[0]["title"]
+    assert len(scheduled(service)) == 1
+
+
+def test_shutdown_waits_for_inflight_capture_before_returning(db_path):
+    async def scenario() -> None:
+        monitor, _, _, _, _ = make_monitor(db_path, enabled=False)
+        started = threading.Event()
+        release = threading.Event()
+        persisted = threading.Event()
+
+        def slow_run_once(*_args, **_kwargs) -> MonitorResult:
+            started.set()
+            release.wait(1)
+            persisted.set()
+            return MonitorResult(captured=False, alerted=False)
+
+        monitor.run_once = slow_run_once
+        monitor.start()
+        assert await asyncio.to_thread(started.wait, 1)
+
+        shutdown = asyncio.create_task(monitor.shutdown())
+        await asyncio.sleep(0)
+        assert shutdown.done() is False
+        release.set()
+        await asyncio.wait_for(shutdown, 1)
+        assert persisted.is_set() is True
+        assert monitor._task is None
+
+    asyncio.run(scenario())
+
+
+def test_wake_arriving_during_wait_recalculation_is_not_lost(db_path):
+    async def scenario() -> None:
+        monitor, _, _, _, _ = make_monitor(db_path, enabled=False)
+        calculating_delay = threading.Event()
+        release_delay = threading.Event()
+        ran_again = threading.Event()
+        runs = [0]
+
+        def run_once(*_args, **_kwargs) -> MonitorResult:
+            runs[0] += 1
+            if runs[0] == 2:
+                ran_again.set()
+            return MonitorResult(captured=False, alerted=False)
+
+        def wait_seconds() -> float:
+            calculating_delay.set()
+            release_delay.wait(1)
+            return 60.0
+
+        def wake_during_recalculation() -> None:
+            calculating_delay.wait(1)
+            monitor.wake()
+            release_delay.set()
+
+        monitor.run_once = run_once
+        monitor._seconds_until_next_run = wait_seconds
+        threading.Thread(target=wake_during_recalculation, daemon=True).start()
+        monitor.start()
+        assert await asyncio.to_thread(ran_again.wait, 1)
+        await monitor.shutdown()
+
+    asyncio.run(scenario())
+
+
+def test_wait_recalculation_does_not_block_the_event_loop(db_path):
+    async def scenario() -> None:
+        monitor, _, _, _, _ = make_monitor(db_path, enabled=False)
+        calculated = threading.Event()
+        worker_thread = [None]
+        loop_thread = threading.get_ident()
+
+        def run_once(*_args, **_kwargs) -> MonitorResult:
+            return MonitorResult(captured=False, alerted=False)
+
+        def wait_seconds() -> float:
+            worker_thread[0] = threading.get_ident()
+            calculated.set()
+            return 60.0
+
+        monitor.run_once = run_once
+        monitor._seconds_until_next_run = wait_seconds
+        monitor.start()
+        assert await asyncio.to_thread(calculated.wait, 1)
+        assert worker_thread[0] != loop_thread
+        await monitor.shutdown()
 
     asyncio.run(scenario())

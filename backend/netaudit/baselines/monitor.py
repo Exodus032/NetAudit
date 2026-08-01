@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable, Optional, Protocol
@@ -45,6 +44,8 @@ class BaselineMonitor:
         self._dispatcher = dispatcher
         self._clock = clock
         self._wake = asyncio.Event()
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._stopping = False
         self._task: Optional[asyncio.Task[None]] = None
 
     def run_once(self, now: Optional[str] = None) -> MonitorResult:
@@ -67,25 +68,23 @@ class BaselineMonitor:
                 self._score,
                 captured_at=current,
             )
-            self._service.prune_scheduled(iso_z(current_seconds - _RETENTION_SECONDS))
-            if previous_id is None:
-                return MonitorResult(captured=True, alerted=False)
-
-            diff = self._service.diff(previous_id, created.id)
-            if diff is None:
-                return MonitorResult(captured=True, alerted=False)
-
-            categories = self._alert_categories(diff)
-            if not categories:
-                return MonitorResult(captured=True, alerted=False)
-
-            self._dispatcher.dispatch(
-                severity="high",
-                source="scheduled_baseline",
-                source_id=created.id,
-                title=f"Scheduled baseline: {', '.join(categories)}",
-            )
-            return MonitorResult(captured=True, alerted=True)
+            alerted = False
+            try:
+                if previous_id is not None:
+                    diff = self._service.diff(previous_id, created.id)
+                    if diff is not None:
+                        categories = self._alert_categories(diff)
+                        if categories:
+                            self._dispatcher.dispatch(
+                                severity="high",
+                                source="scheduled_baseline",
+                                source_id=created.id,
+                                title=f"Scheduled baseline: {', '.join(categories)}",
+                            )
+                            alerted = True
+            finally:
+                self._service.prune_scheduled(iso_z(current_seconds - _RETENTION_SECONDS))
+            return MonitorResult(captured=True, alerted=alerted)
         except Exception as exc:
             error = self._bounded_error(exc)
             try:
@@ -98,35 +97,46 @@ class BaselineMonitor:
         """Start the asynchronous scheduler once on the current event loop."""
         if self._task is not None:
             return
-        self._task = asyncio.get_running_loop().create_task(self._run(), name="netaudit-baseline-monitor")
+        self._stopping = False
+        self._loop = asyncio.get_running_loop()
+        self._task = self._loop.create_task(self._run(), name="netaudit-baseline-monitor")
 
     def wake(self) -> None:
         """Interrupt the current wait so changed schedule state takes effect."""
-        self._wake.set()
+        loop = self._loop
+        if loop is not None and not loop.is_closed():
+            loop.call_soon_threadsafe(self._wake.set)
 
     async def shutdown(self) -> None:
-        """Cancel and await the scheduler, preventing work after shutdown."""
+        """Wait for in-flight capture, then stop the scheduler."""
         task = self._task
         if task is None:
             return
-        self._task = None
-        task.cancel()
-        with suppress(asyncio.CancelledError):
+        self._stopping = True
+        self.wake()
+        try:
             await task
+        finally:
+            self._task = None
+            self._loop = None
 
     async def _run(self) -> None:
-        while True:
+        while not self._stopping:
             await asyncio.to_thread(self.run_once)
+            if self._stopping:
+                return
+
+            delay = await asyncio.to_thread(self._seconds_until_next_run)
+            if self._stopping:
+                return
             if self._wake.is_set():
                 self._wake.clear()
                 continue
-
-            delay = self._seconds_until_next_run()
-            self._wake.clear()
             try:
                 await asyncio.wait_for(self._wake.wait(), timeout=delay)
             except asyncio.TimeoutError:
-                pass
+                continue
+            self._wake.clear()
 
     def _seconds_until_next_run(self) -> float:
         try:
