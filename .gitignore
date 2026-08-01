@@ -14,3 +14,4 @@ build/
 netaudit.db*
 .env
 .DS_Store
+.worktrees/
