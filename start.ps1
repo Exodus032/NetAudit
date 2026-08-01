@@ -58,17 +58,11 @@ Write-Step 'Preparing backend'
 
 if (-not (Test-Path $backend)) { throw "backend/ not found at $backend" }
 
-$venv = Join-Path $backend '.venv'
-$py = Join-Path $venv 'Scripts\python.exe'
+$uv = (Get-Command uv -ErrorAction Stop).Source
 
-if (-not (Test-Path $py)) {
-    Write-Host '    creating virtualenv...'
-    python -m venv $venv
-}
 if (-not $SkipInstall) {
-    Write-Host '    installing python dependencies...'
-    & $py -m pip install --quiet --upgrade pip
-    & $py -m pip install --quiet -r (Join-Path $backend 'requirements.txt')
+    Write-Host '    syncing python dependencies with uv...'
+    & $uv sync --project $backend
 }
 Write-Ok 'Backend ready'
 
@@ -97,7 +91,7 @@ if ($Prod) {
 
 Write-Step 'Starting services'
 
-$backendArgs = @('-m', 'netaudit.server')
+$backendArgs = @('run', '--directory', $backend, '--no-sync', '-m', 'netaudit.server')
 if ($Lan) {
     $backendArgs += @('--unsafe-bind', '0.0.0.0', '--allow-lan-bootstrap')
     if ($isAdmin) {
@@ -112,7 +106,7 @@ if ($Lan) {
     }
 }
 
-$backendProc = Start-Process -FilePath $py -ArgumentList $backendArgs `
+$backendProc = Start-Process -FilePath $uv -ArgumentList $backendArgs `
     -WorkingDirectory $backend -PassThru
 if ($Lan) {
     $lanIp = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |

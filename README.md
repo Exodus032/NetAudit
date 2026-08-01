@@ -81,25 +81,23 @@ elevation it still works, on the polling tier, with reduced detail.
 
 ### Linux
 
-Requires Python 3.11+ and Node.js 20+ with npm. This starts the portable polling
-tier; it does not provide Npcap/raw-socket capture or Windows posture checks.
+Requires uv and Node.js 20+ with npm. This starts the portable polling tier; it does
+not provide Npcap/raw-socket capture or Windows posture checks.
 
 ```bash
 git clone https://github.com/Exodus032/NetAudit.git
 cd NetAudit
-python3 -m venv backend/.venv
-source backend/.venv/bin/activate
-pip install -r backend/requirements.txt
+uv sync --project backend
 (cd frontend && npm install && npm run build)
-(cd backend && python -m netaudit.server)
+uv run --directory backend -m netaudit.server
 ```
 
 Open `http://127.0.0.1:8787`.
 
 ### macOS
 
-Install Python 3.11+ and Node.js 20+ (for example with Homebrew), then use the same
-commands as the Linux section above. macOS runs the polling tier only; macOS firewall,
+Install uv and Node.js 20+ (for example with Homebrew), then use the same commands
+as the Linux section above. macOS runs the polling tier only; macOS firewall,
 packet-capture, and host-posture checks are not currently implemented.
 
 ### Share the dashboard on Linux or macOS
@@ -107,8 +105,7 @@ packet-capture, and host-posture checks are not currently implemented.
 After building the frontend as above, start the backend only on a trusted network:
 
 ```bash
-cd backend
-python -m netaudit.server --unsafe-bind 0.0.0.0 --allow-lan-bootstrap
+uv run --directory backend -m netaudit.server --unsafe-bind 0.0.0.0 --allow-lan-bootstrap
 ```
 
 Open `http://<computer-ip>:8787` from another device on that network. If the host
@@ -137,8 +134,7 @@ firewall rule when you no longer want to share it.
 Manual:
 
 ```powershell
-cd backend; python -m venv .venv; .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt; python -m netaudit.server   # 127.0.0.1:8787
+uv sync --project backend; uv run --directory backend -m netaudit.server   # 127.0.0.1:8787
 
 cd frontend; npm install; npm run dev                        # localhost:5173
 ```
