@@ -52,7 +52,7 @@ class BaselineScheduleResponse(BaseModel):
     model_config = _model()
     enabled: bool
     interval_hours: Literal[6, 12, 24, 48, 168]
-    last_success_at: Optional[str] = None
+    last_succeeded_at: Optional[str] = None
     last_error: Optional[str] = None
     next_due_at: Optional[str] = None
 

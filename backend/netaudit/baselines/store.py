@@ -60,13 +60,16 @@ def _ensure_schema(conn: sqlite3.Connection, db_path) -> None:
                 enabled INTEGER NOT NULL DEFAULT 0,
                 interval_hours INTEGER NOT NULL DEFAULT 24
                     CHECK (interval_hours IN (6, 12, 24, 48, 168)),
-                last_success_at TEXT,
+                last_succeeded_at TEXT,
                 last_error TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_baselines_origin_captured_at
                 ON baselines (origin, captured_at);
             """
         )
+        schedule_columns = {row["name"] for row in conn.execute("PRAGMA table_info(baseline_schedule)")}
+        if "last_success_at" in schedule_columns and "last_succeeded_at" not in schedule_columns:
+            conn.execute("ALTER TABLE baseline_schedule RENAME COLUMN last_success_at TO last_succeeded_at")
         conn.execute(
             """
             INSERT OR IGNORE INTO baseline_schedule (singleton, enabled, interval_hours)
@@ -178,7 +181,7 @@ def get_baseline(baseline_id: str, db_path=None) -> Optional[BaselineRecord]:
 class BaselineScheduleRecord:
     enabled: bool
     interval_hours: int
-    last_success_at: Optional[str]
+    last_succeeded_at: Optional[str]
     last_error: Optional[str]
 
 
@@ -186,7 +189,7 @@ def _row_to_schedule_record(row: sqlite3.Row) -> BaselineScheduleRecord:
     return BaselineScheduleRecord(
         enabled=bool(row["enabled"]),
         interval_hours=row["interval_hours"],
-        last_success_at=row["last_success_at"],
+        last_succeeded_at=row["last_succeeded_at"],
         last_error=row["last_error"],
     )
 
@@ -196,7 +199,7 @@ def get_schedule(db_path=None) -> BaselineScheduleRecord:
     _ensure_schema(conn, db_path)
     row = conn.execute(
         """
-        SELECT enabled, interval_hours, last_success_at, last_error
+        SELECT enabled, interval_hours, last_succeeded_at, last_error
         FROM baseline_schedule
         WHERE singleton = 1
         """
@@ -227,9 +230,9 @@ def mark_schedule_success(captured_at: str, db_path=None) -> BaselineScheduleRec
     conn.execute(
         """
         UPDATE baseline_schedule
-        SET last_success_at = ?, last_error = NULL
+        SET last_succeeded_at = ?, last_error = NULL
         WHERE singleton = 1
-          AND (last_success_at IS NULL OR julianday(last_success_at) <= julianday(?))
+          AND (last_succeeded_at IS NULL OR julianday(last_succeeded_at) <= julianday(?))
         """,
         (captured_at, captured_at),
     )

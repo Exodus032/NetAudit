@@ -17,7 +17,7 @@ def test_schedule_defaults_to_disabled_with_24_hour_interval(db_path):
 
     assert schedule.enabled is False
     assert schedule.interval_hours == 24
-    assert schedule.last_success_at is None
+    assert schedule.last_succeeded_at is None
     assert schedule.last_error is None
     assert schedule.next_due_at is None
 
@@ -100,7 +100,7 @@ def test_create_scheduled_preserves_captured_at_and_sets_next_due_at(db_path):
 
     assert created.origin == "scheduled"
     assert created.captured_at == "2026-04-01T00:00:00.000Z"
-    assert schedule.last_success_at == "2026-04-01T00:00:00.000Z"
+    assert schedule.last_succeeded_at == "2026-04-01T00:00:00.000Z"
     assert schedule.next_due_at == "2026-04-01T06:00:00.000Z"
 
 
@@ -233,7 +233,7 @@ def test_concurrent_scheduled_captures_keep_the_newest_success_watermark(db_path
 
     assert not older.is_alive() and not newer.is_alive()
     assert errors == []
-    assert BaselineService(db_path).get_schedule().last_success_at == "2026-04-01T01:00:00.000Z"
+    assert BaselineService(db_path).get_schedule().last_succeeded_at == "2026-04-01T01:00:00.000Z"
 
 
 def test_canonical_timestamps_sort_and_prune_chronologically(db_path):

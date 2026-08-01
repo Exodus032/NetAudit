@@ -108,12 +108,12 @@ def get_baselines_response(db_path=None) -> BaselinesResponse:
 def _schedule_response(db_path=None) -> BaselineScheduleResponse:
     schedule = get_schedule(db_path)
     next_due_at = None
-    if schedule.last_success_at is not None:
-        next_due_at = iso_z(parse_iso(schedule.last_success_at) + schedule.interval_hours * 3600)
+    if schedule.last_succeeded_at is not None:
+        next_due_at = iso_z(parse_iso(schedule.last_succeeded_at) + schedule.interval_hours * 3600)
     return BaselineScheduleResponse(
         enabled=schedule.enabled,
         interval_hours=schedule.interval_hours,
-        last_success_at=schedule.last_success_at,
+        last_succeeded_at=schedule.last_succeeded_at,
         last_error=schedule.last_error,
         next_due_at=next_due_at,
     )
@@ -250,8 +250,8 @@ class BaselineService:
             schedule = get_schedule(self._db_path)
             if not schedule.enabled:
                 return None
-            if schedule.last_success_at is not None:
-                due_at = parse_iso(schedule.last_success_at) + schedule.interval_hours * 3600
+            if schedule.last_succeeded_at is not None:
+                due_at = parse_iso(schedule.last_succeeded_at) + schedule.interval_hours * 3600
                 if current < due_at:
                     return None
             previous = get_most_recent_scheduled_baseline(self._db_path)
