@@ -142,14 +142,27 @@ export function GuidedTour({ onNavigate }: { onNavigate?: (view: string) => void
         <h3 className="tour-panel-title">{step.title}</h3>
         <p className="tour-panel-body">{step.body}</p>
 
-        {!hasTarget && (
+        {/* Two different reasons there's nothing to highlight, and telling
+            them apart matters. Without onNavigate the student is on the
+            wrong view and has to switch. With it we already switched, so
+            the element simply isn't on screen yet -- it's a drawer that
+            opens on click -- and repeating "switch to this view" would send
+            them looking for a sidebar link they're already on. */}
+        {!hasTarget && !onNavigate && (
           <p className="tour-panel-hint">
             This step is on the <strong>{VIEW_LABELS[step.view] ?? step.view}</strong> view. Switch to it from the sidebar,
             then use Next.
           </p>
         )}
+        {!hasTarget && onNavigate && step.action_hint && (
+          <p className="tour-panel-hint">
+            Nothing to highlight until you {step.action_hint}.
+          </p>
+        )}
 
-        {step.action_hint && <p className="tour-panel-action">» {step.action_hint}</p>}
+        {step.action_hint && (hasTarget || !onNavigate) && (
+          <p className="tour-panel-action">» {step.action_hint}</p>
+        )}
 
         {step.glossary_terms.length > 0 && (
           <div className="tour-panel-terms">
