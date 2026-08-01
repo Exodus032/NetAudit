@@ -232,8 +232,12 @@ class ThreatScheduler:
         self.interval_seconds = interval_seconds
         self.initial_delay_seconds = initial_delay_seconds
         self.capture_mode = capture_mode
+        # Attached by `wire_pro`, which is what creates the alert service.
+        # Optional so the scheduler still runs in a v2-only install.
+        self.alert_dispatcher: Optional[ThreatAlertDispatcher] = None
         self.last_run: Optional[datetime] = None
         self.last_error: Optional[str] = None
+        self.alerts_sent = 0
         self.run_count = 0
         self.suppressed_detectors: tuple[str, ...] = ()
         self._suppression_applied = False
@@ -281,6 +285,8 @@ class ThreatScheduler:
         try:
             self.apply_tier_suppression()
             touched = self.engine.run_once()
+            if self.alert_dispatcher is not None:
+                self.alerts_sent += self.alert_dispatcher.dispatch_new(touched)
             self.last_run = datetime.now(timezone.utc)
             self.last_error = None
             self.run_count += 1
@@ -543,6 +549,80 @@ class LiveFindingsProvider:
             for t in threats
             if t.get("status") != "resolved"
         ]
+
+
+class ThreatAlertDispatcher:
+    """Turns a newly detected threat into an alert, exactly once.
+
+    `alerts` was written with a `dispatch()` that documents itself as
+    "called by whatever in the backend decided something is worth alerting
+    on", and nothing was calling it -- so alerting could be configured and
+    tested but would never fire on its own. This is that caller.
+
+    `ThreatEngine.run_once()` returns every open threat, not just the new
+    ones, so firing on its output directly would re-alert the same threat
+    every 60 seconds. The already-alerted set is seeded from alert history
+    rather than kept purely in memory, so a restart does not replay every
+    existing threat at the user.
+    """
+
+    HISTORY_SEED_LIMIT = 500
+
+    def __init__(self, alert_service) -> None:
+        self._alerts = alert_service
+        self._alerted: Optional[set[str]] = None
+
+    def _seed(self) -> None:
+        if self._alerted is not None:
+            return
+        alerted: set[str] = set()
+        try:
+            history = self._alerts.history(limit=self.HISTORY_SEED_LIMIT)
+            for item in history.alerts:
+                if item.source == "threat" and item.source_id:
+                    alerted.add(item.source_id)
+        except Exception:
+            logger.debug("could not seed alerted-threat set from history", exc_info=True)
+        self._alerted = alerted
+
+    def dispatch_new(self, threats: Iterable[dict]) -> int:
+        """Returns how many alerts were actually recorded."""
+        try:
+            if not self._alerts.get_config().enabled:
+                # Nothing is marked as alerted while alerting is off, so
+                # turning it on does not silently swallow what is already
+                # on screen.
+                return 0
+        except Exception:
+            logger.debug("alert config unavailable", exc_info=True)
+            return 0
+
+        self._seed()
+        assert self._alerted is not None
+        sent = 0
+        for threat in threats:
+            threat_id = threat.get("id")
+            if not threat_id or threat_id in self._alerted:
+                continue
+            if threat.get("status") == "resolved":
+                continue
+            try:
+                entry = self._alerts.dispatch(
+                    severity=str(threat.get("severity", "info")),
+                    source="threat",
+                    source_id=threat_id,
+                    title=str(threat.get("title", threat_id)),
+                )
+            except Exception:
+                logger.exception("alert dispatch failed for threat %s", threat_id)
+                continue
+            if entry is None:
+                # Below min_severity. Deliberately not marked as alerted:
+                # lowering the threshold later should surface it.
+                continue
+            self._alerted.add(threat_id)
+            sent += 1
+        return sent
 
 
 class PostureChecksAdapter:
@@ -823,6 +903,12 @@ def wire_pro(app, db_path: Optional[Path] = None) -> None:
     app.state.alert_service = alert_service
     app.state.baseline_service = baseline_service
     app.state.report_provider = report_provider
+
+    # Give the detection loop somewhere to send what it finds. Without this
+    # the alerting feature is configurable, testable, and permanently silent.
+    scheduler = getattr(app.state, "threat_scheduler", None)
+    if scheduler is not None:
+        scheduler.alert_dispatcher = ThreatAlertDispatcher(alert_service)
 
     app.include_router(pcap_router)
     app.include_router(export_router)

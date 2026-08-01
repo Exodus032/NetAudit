@@ -600,3 +600,101 @@ class TestProAdapters:
         assert provider.security_score() == {}
         assert provider.posture_report() == {}
         assert provider.threats() == []
+
+
+class _FakeAlertService:
+    """Stands in for `alerts.AlertService` with no DB and no sending."""
+
+    def __init__(self, enabled=True, min_severity="high", history=()):
+        self._enabled = enabled
+        self._min = min_severity
+        self._order = {"info": 1, "low": 2, "medium": 3, "high": 4, "critical": 5}
+        self.dispatched: list[tuple[str, str]] = []
+        self._history = list(history)
+
+    def get_config(self):
+        return type("C", (), {"enabled": self._enabled})()
+
+    def history(self, limit=200):
+        alerts = [
+            type("I", (), {"source": s, "source_id": sid})() for s, sid in self._history
+        ]
+        return type("H", (), {"alerts": alerts})()
+
+    def dispatch(self, severity, source, source_id, title):
+        if self._order.get(severity, 0) < self._order.get(self._min, 0):
+            return None
+        self.dispatched.append((source_id, severity))
+        return object()
+
+
+class TestThreatAlertDispatcher:
+    """`alerts.dispatch()` documents itself as needing a caller. This is it,
+    so the tests here are about not being annoying: no duplicates, no replay
+    after restart, nothing swallowed while alerting was off."""
+
+    def _threat(self, tid, severity="critical", status="open"):
+        return {"id": tid, "severity": severity, "title": f"Threat {tid}", "status": status}
+
+    def test_each_threat_alerts_once_across_repeated_passes(self):
+        alerts = _FakeAlertService()
+        d = integration.ThreatAlertDispatcher(alerts)
+        batch = [self._threat("t1"), self._threat("t2")]
+
+        assert d.dispatch_new(batch) == 2
+        # run_once() returns every open threat every pass, not just new ones
+        assert d.dispatch_new(batch) == 0
+        assert d.dispatch_new(batch + [self._threat("t3")]) == 1
+        assert [tid for tid, _ in alerts.dispatched] == ["t1", "t2", "t3"]
+
+    def test_history_seeding_stops_a_restart_replaying_old_threats(self):
+        alerts = _FakeAlertService(history=[("threat", "t1"), ("recommendation", "r9")])
+        d = integration.ThreatAlertDispatcher(alerts)
+        assert d.dispatch_new([self._threat("t1"), self._threat("t2")]) == 1
+        assert [tid for tid, _ in alerts.dispatched] == ["t2"]
+
+    def test_nothing_is_marked_alerted_while_alerting_is_disabled(self):
+        """Turning alerting on must not silently swallow the threats that
+        were already on screen when it was off."""
+        alerts = _FakeAlertService(enabled=False)
+        d = integration.ThreatAlertDispatcher(alerts)
+        assert d.dispatch_new([self._threat("t1")]) == 0
+
+        alerts._enabled = True
+        assert d.dispatch_new([self._threat("t1")]) == 1
+
+    def test_below_threshold_threats_stay_eligible_if_the_threshold_drops(self):
+        alerts = _FakeAlertService(min_severity="critical")
+        d = integration.ThreatAlertDispatcher(alerts)
+        assert d.dispatch_new([self._threat("t1", severity="medium")]) == 0
+
+        alerts._min = "low"
+        assert d.dispatch_new([self._threat("t1", severity="medium")]) == 1
+
+    def test_resolved_threats_do_not_alert(self):
+        alerts = _FakeAlertService()
+        d = integration.ThreatAlertDispatcher(alerts)
+        assert d.dispatch_new([self._threat("t1", status="resolved")]) == 0
+
+    def test_a_failing_alert_service_cannot_break_the_detection_loop(self):
+        class _Exploding(_FakeAlertService):
+            def dispatch(self, **kwargs):
+                raise RuntimeError("webhook host is down")
+
+        alerts = _Exploding()
+        d = integration.ThreatAlertDispatcher(alerts)
+        assert d.dispatch_new([self._threat("t1"), self._threat("t2")]) == 0
+
+    def test_scheduler_forwards_detections_to_the_dispatcher(self):
+        class _Engine:
+            def run_once(self):
+                return [{"id": "t1", "severity": "critical", "title": "T", "status": "open"}]
+
+        alerts = _FakeAlertService()
+        scheduler = integration.ThreatScheduler(_Engine())
+        scheduler.alert_dispatcher = integration.ThreatAlertDispatcher(alerts)
+
+        scheduler.run_once()
+        assert scheduler.alerts_sent == 1
+        scheduler.run_once()
+        assert scheduler.alerts_sent == 1, "the same threat must not re-alert each pass"
