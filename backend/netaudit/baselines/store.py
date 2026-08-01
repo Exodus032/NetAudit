@@ -17,6 +17,9 @@ from ..timeutil import now_iso
 
 _schema_ready_for: set[str] = set()
 
+_ALLOWED_INTERVAL_HOURS = frozenset((6, 12, 24, 48, 168))
+_BASELINE_ORIGINS = frozenset(("manual", "scheduled"))
+
 
 def _ensure_schema(conn: sqlite3.Connection, db_path) -> None:
     key = str(db_path) if db_path is not None else "default"
@@ -33,8 +36,32 @@ def _ensure_schema(conn: sqlite3.Connection, db_path) -> None:
             listeners_json TEXT NOT NULL DEFAULT '[]',
             posture_score INTEGER NOT NULL DEFAULT 0,
             threats_score INTEGER,
-            overall_score INTEGER NOT NULL DEFAULT 0
+            overall_score INTEGER NOT NULL DEFAULT 0,
+            origin TEXT NOT NULL DEFAULT 'manual'
         );
+        """
+    )
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(baselines)")}
+    if "origin" not in columns:
+        conn.execute("ALTER TABLE baselines ADD COLUMN origin TEXT NOT NULL DEFAULT 'manual'")
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS baseline_schedule (
+            singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+            enabled INTEGER NOT NULL DEFAULT 0,
+            interval_hours INTEGER NOT NULL DEFAULT 24
+                CHECK (interval_hours IN (6, 12, 24, 48, 168)),
+            last_success_at TEXT,
+            last_error TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_baselines_origin_captured_at
+            ON baselines (origin, captured_at);
+        """
+    )
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO baseline_schedule (singleton, enabled, interval_hours)
+        VALUES (1, 0, 24)
         """
     )
     _schema_ready_for.add(key)
@@ -55,6 +82,7 @@ class BaselineRecord:
     posture_score: int
     threats_score: Optional[int]
     overall_score: int
+    origin: str = "manual"
 
 
 def insert_baseline(
@@ -66,26 +94,31 @@ def insert_baseline(
     threats_score: Optional[int],
     overall_score: int,
     db_path=None,
+    origin: str = "manual",
+    captured_at: Optional[str] = None,
 ) -> BaselineRecord:
+    if origin not in _BASELINE_ORIGINS:
+        raise ValueError("origin must be 'manual' or 'scheduled'")
     conn = dbmod.get_conn(db_path)
     _ensure_schema(conn, db_path)
     record = BaselineRecord(
         id=_new_id(),
         label=label,
-        captured_at=now_iso(),
+        captured_at=captured_at or now_iso(),
         checks=checks,
         peers=peers,
         listeners=listeners,
         posture_score=posture_score,
         threats_score=threats_score,
         overall_score=overall_score,
+        origin=origin,
     )
     conn.execute(
         """
         INSERT INTO baselines (id, label, captured_at, checks_json, peers_json, listeners_json,
-                                posture_score, threats_score, overall_score)
+                               posture_score, threats_score, overall_score, origin)
         VALUES (:id, :label, :captured_at, :checks_json, :peers_json, :listeners_json,
-                :posture_score, :threats_score, :overall_score)
+                :posture_score, :threats_score, :overall_score, :origin)
         """,
         {
             "id": record.id,
@@ -97,6 +130,7 @@ def insert_baseline(
             "posture_score": record.posture_score,
             "threats_score": record.threats_score,
             "overall_score": record.overall_score,
+            "origin": record.origin,
         },
     )
     return record
@@ -113,6 +147,7 @@ def _row_to_record(row: sqlite3.Row) -> BaselineRecord:
         posture_score=row["posture_score"],
         threats_score=row["threats_score"],
         overall_score=row["overall_score"],
+        origin=row["origin"],
     )
 
 
@@ -128,6 +163,100 @@ def get_baseline(baseline_id: str, db_path=None) -> Optional[BaselineRecord]:
     _ensure_schema(conn, db_path)
     row = conn.execute("SELECT * FROM baselines WHERE id = ?", (baseline_id,)).fetchone()
     return _row_to_record(row) if row else None
+
+
+@dataclass(frozen=True)
+class BaselineScheduleRecord:
+    enabled: bool
+    interval_hours: int
+    last_success_at: Optional[str]
+    last_error: Optional[str]
+
+
+def _row_to_schedule_record(row: sqlite3.Row) -> BaselineScheduleRecord:
+    return BaselineScheduleRecord(
+        enabled=bool(row["enabled"]),
+        interval_hours=row["interval_hours"],
+        last_success_at=row["last_success_at"],
+        last_error=row["last_error"],
+    )
+
+
+def get_schedule(db_path=None) -> BaselineScheduleRecord:
+    conn = dbmod.get_conn(db_path)
+    _ensure_schema(conn, db_path)
+    row = conn.execute(
+        """
+        SELECT enabled, interval_hours, last_success_at, last_error
+        FROM baseline_schedule
+        WHERE singleton = 1
+        """
+    ).fetchone()
+    return _row_to_schedule_record(row)
+
+
+def save_schedule(enabled: bool, interval_hours: int, db_path=None) -> BaselineScheduleRecord:
+    if interval_hours not in _ALLOWED_INTERVAL_HOURS:
+        raise ValueError("interval_hours must be one of 6, 12, 24, 48, or 168")
+    conn = dbmod.get_conn(db_path)
+    _ensure_schema(conn, db_path)
+    conn.execute(
+        """
+        UPDATE baseline_schedule
+        SET enabled = ?, interval_hours = ?
+        WHERE singleton = 1
+        """,
+        (enabled, interval_hours),
+    )
+    return get_schedule(db_path)
+
+
+def mark_schedule_success(captured_at: str, db_path=None) -> BaselineScheduleRecord:
+    conn = dbmod.get_conn(db_path)
+    _ensure_schema(conn, db_path)
+    conn.execute(
+        """
+        UPDATE baseline_schedule
+        SET last_success_at = ?, last_error = NULL
+        WHERE singleton = 1
+        """,
+        (captured_at,),
+    )
+    return get_schedule(db_path)
+
+
+def mark_schedule_error(error: str, db_path=None) -> BaselineScheduleRecord:
+    conn = dbmod.get_conn(db_path)
+    _ensure_schema(conn, db_path)
+    conn.execute(
+        "UPDATE baseline_schedule SET last_error = ? WHERE singleton = 1",
+        (error,),
+    )
+    return get_schedule(db_path)
+
+
+def get_most_recent_scheduled_baseline(db_path=None) -> Optional[BaselineRecord]:
+    conn = dbmod.get_conn(db_path)
+    _ensure_schema(conn, db_path)
+    row = conn.execute(
+        """
+        SELECT * FROM baselines
+        WHERE origin = 'scheduled'
+        ORDER BY captured_at DESC
+        LIMIT 1
+        """
+    ).fetchone()
+    return _row_to_record(row) if row else None
+
+
+def delete_scheduled_before(cutoff: str, db_path=None) -> int:
+    conn = dbmod.get_conn(db_path)
+    _ensure_schema(conn, db_path)
+    result = conn.execute(
+        "DELETE FROM baselines WHERE origin = 'scheduled' AND captured_at < ?",
+        (cutoff,),
+    )
+    return result.rowcount
 
 
 def reset_for_tests(db_path) -> None:

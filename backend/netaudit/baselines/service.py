@@ -3,10 +3,13 @@ from __future__ import annotations
 
 from typing import Optional
 
+from ..timeutil import iso_z, parse_iso
+
 from .models import (
     BaselineDiff,
     BaselineListItem,
     BaselineRef,
+    BaselineScheduleResponse,
     BaselinesResponse,
     CheckPresence,
     CheckTransition,
@@ -15,7 +18,16 @@ from .models import (
     ScoreDelta,
 )
 from .providers import PostureProvider, ScoreProvider, TrafficProvider
-from .store import BaselineRecord, get_baseline, insert_baseline, list_baselines
+from .store import (
+    BaselineRecord,
+    delete_scheduled_before,
+    get_baseline,
+    get_schedule,
+    insert_baseline,
+    list_baselines,
+    mark_schedule_success,
+    save_schedule,
+)
 
 # Ordering of "badness" for a check status, used to classify a status
 # transition as fixed/regressed. error/skipped are deliberately excluded --
@@ -35,6 +47,8 @@ def capture_snapshot(
     traffic: TrafficProvider,
     score: ScoreProvider,
     db_path=None,
+    origin: str = "manual",
+    captured_at: Optional[str] = None,
 ) -> BaselineRecord:
     checks = [{"id": str(c.get("id")), "status": str(c.get("status"))} for c in posture.checks() if "id" in c]
     peers = sorted({str(p) for p in traffic.peers()})
@@ -51,6 +65,8 @@ def capture_snapshot(
         threats_score=scores.get("threats"),
         overall_score=int(scores.get("overall", scores.get("posture", 0))),
         db_path=db_path,
+        origin=origin,
+        captured_at=captured_at,
     )
 
 
@@ -63,6 +79,7 @@ def _record_to_list_item(record: BaselineRecord) -> BaselineListItem:
         id=record.id,
         label=record.label,
         captured_at=record.captured_at,
+        origin=record.origin,
         checks_count=len(record.checks),
         peers_count=len(record.peers),
         listeners_count=len(record.listeners),
@@ -74,6 +91,20 @@ def _record_to_list_item(record: BaselineRecord) -> BaselineListItem:
 
 def get_baselines_response(db_path=None) -> BaselinesResponse:
     return BaselinesResponse(baselines=[_record_to_list_item(r) for r in list_baselines(db_path)])
+
+
+def _schedule_response(db_path=None) -> BaselineScheduleResponse:
+    schedule = get_schedule(db_path)
+    next_due_at = None
+    if schedule.last_success_at is not None:
+        next_due_at = iso_z(parse_iso(schedule.last_success_at) + schedule.interval_hours * 3600)
+    return BaselineScheduleResponse(
+        enabled=schedule.enabled,
+        interval_hours=schedule.interval_hours,
+        last_success_at=schedule.last_success_at,
+        last_error=schedule.last_error,
+        next_due_at=next_due_at,
+    )
 
 
 def diff_baselines(from_id: str, to_id: str, db_path=None) -> Optional[BaselineDiff]:
@@ -164,6 +195,35 @@ class BaselineService:
 
     def diff(self, from_id: str, to_id: str) -> Optional[BaselineDiff]:
         return diff_baselines(from_id, to_id, self._db_path)
+
+    def create_scheduled(
+        self,
+        posture: PostureProvider,
+        traffic: TrafficProvider,
+        score: ScoreProvider,
+        captured_at: str,
+    ) -> BaselineListItem:
+        record = capture_snapshot(
+            "Scheduled baseline",
+            posture,
+            traffic,
+            score,
+            self._db_path,
+            origin="scheduled",
+            captured_at=captured_at,
+        )
+        mark_schedule_success(record.captured_at, self._db_path)
+        return _record_to_list_item(record)
+
+    def prune_scheduled(self, cutoff: str) -> int:
+        return delete_scheduled_before(cutoff, self._db_path)
+
+    def get_schedule(self) -> BaselineScheduleResponse:
+        return _schedule_response(self._db_path)
+
+    def update_schedule(self, enabled: bool, interval_hours: int) -> BaselineScheduleResponse:
+        save_schedule(enabled, interval_hours, self._db_path)
+        return _schedule_response(self._db_path)
 
 
 _default_service: Optional[BaselineService] = None
