@@ -5,10 +5,11 @@ import threading
 
 import pytest
 
+from netaudit.baselines import service as baseline_service
 from netaudit.baselines import store as baseline_store
 from netaudit.baselines.providers import StaticPostureProvider, StaticScoreProvider, StaticTrafficProvider
 from netaudit.baselines.service import BaselineService
-from netaudit.baselines.store import insert_baseline, mark_schedule_error
+from netaudit.baselines.store import get_most_recent_scheduled_baseline, insert_baseline, mark_schedule_error
 
 
 def test_schedule_defaults_to_disabled_with_24_hour_interval(db_path):
@@ -186,3 +187,87 @@ def test_concurrent_legacy_migration_keeps_existing_baselines_as_manual(db_path,
     assert not any(worker.is_alive() for worker in workers)
     assert errors == []
     assert baseline_store.list_baselines(db_path)[0].origin == "manual"
+
+
+def test_concurrent_scheduled_captures_keep_the_newest_success_watermark(db_path, monkeypatch):
+    capture_lock = threading.Lock()
+    monkeypatch.setattr(baseline_service, "_scheduled_capture_lock", capture_lock, raising=False)
+    older_mark_entered = threading.Event()
+    allow_older_mark = threading.Event()
+    errors = []
+    real_mark_success = baseline_service.mark_schedule_success
+
+    def mark_success(captured_at, marked_db_path):
+        lock_is_free = capture_lock.acquire(blocking=False)
+        if lock_is_free:
+            capture_lock.release()
+        if lock_is_free and captured_at == "2026-04-01T00:00:00.000Z":
+            older_mark_entered.set()
+            assert allow_older_mark.wait(timeout=5)
+        elif lock_is_free:
+            assert older_mark_entered.wait(timeout=5)
+            result = real_mark_success(captured_at, marked_db_path)
+            allow_older_mark.set()
+            return result
+        return real_mark_success(captured_at, marked_db_path)
+
+    monkeypatch.setattr(baseline_service, "mark_schedule_success", mark_success)
+
+    def capture(captured_at):
+        try:
+            BaselineService(db_path).create_scheduled(
+                StaticPostureProvider([]),
+                StaticTrafficProvider([], []),
+                StaticScoreProvider(0, None, 0),
+                captured_at,
+            )
+        except Exception as error:
+            errors.append(error)
+
+    older = threading.Thread(target=capture, args=("2026-04-01T00:00:00.000Z",))
+    newer = threading.Thread(target=capture, args=("2026-04-01T01:00:00.000Z",))
+    older.start()
+    newer.start()
+    older.join(timeout=10)
+    newer.join(timeout=10)
+
+    assert not older.is_alive() and not newer.is_alive()
+    assert errors == []
+    assert BaselineService(db_path).get_schedule().last_success_at == "2026-04-01T01:00:00.000Z"
+
+
+def test_canonical_timestamps_sort_and_prune_chronologically(db_path):
+    whole_second = insert_baseline(
+        label="whole-second",
+        checks=[],
+        peers=[],
+        listeners=[],
+        posture_score=0,
+        threats_score=None,
+        overall_score=0,
+        origin="scheduled",
+        captured_at="2026-04-01T00:00:00Z",
+        db_path=db_path,
+    )
+    fractional_second = insert_baseline(
+        label="fractional-second",
+        checks=[],
+        peers=[],
+        listeners=[],
+        posture_score=0,
+        threats_score=None,
+        overall_score=0,
+        origin="scheduled",
+        captured_at="2026-04-01T00:00:00.500Z",
+        db_path=db_path,
+    )
+
+    assert whole_second.captured_at == "2026-04-01T00:00:00.000Z"
+    assert get_most_recent_scheduled_baseline(db_path).id == fractional_second.id
+
+    BaselineService(db_path).prune_scheduled("2026-04-01T00:00:00Z")
+
+    assert {baseline.id for baseline in BaselineService(db_path).list().baselines} == {
+        whole_second.id,
+        fractional_second.id,
+    }

@@ -1,6 +1,7 @@
 """Snapshot capture and diff logic for Part E8."""
 from __future__ import annotations
 
+import threading
 from typing import Optional
 
 from ..timeutil import iso_z, parse_iso
@@ -28,6 +29,8 @@ from .store import (
     mark_schedule_success,
     save_schedule,
 )
+
+_scheduled_capture_lock = threading.Lock()
 
 # Ordering of "badness" for a check status, used to classify a status
 # transition as fixed/regressed. error/skipped are deliberately excluded --
@@ -203,16 +206,17 @@ class BaselineService:
         score: ScoreProvider,
         captured_at: str,
     ) -> BaselineListItem:
-        record = capture_snapshot(
-            "Scheduled baseline",
-            posture,
-            traffic,
-            score,
-            self._db_path,
-            origin="scheduled",
-            captured_at=captured_at,
-        )
-        mark_schedule_success(record.captured_at, self._db_path)
+        with _scheduled_capture_lock:
+            record = capture_snapshot(
+                "Scheduled baseline",
+                posture,
+                traffic,
+                score,
+                self._db_path,
+                origin="scheduled",
+                captured_at=captured_at,
+            )
+            mark_schedule_success(record.captured_at, self._db_path)
         return _record_to_list_item(record)
 
     def prune_scheduled(self, cutoff: str) -> int:

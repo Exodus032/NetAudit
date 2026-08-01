@@ -14,13 +14,17 @@ from dataclasses import dataclass
 from typing import Optional
 
 from ..store import db as dbmod
-from ..timeutil import now_iso
+from ..timeutil import iso_z, now_iso, parse_iso
 
 _schema_ready_for: set[str] = set()
 _schema_lock = threading.Lock()
 
 _ALLOWED_INTERVAL_HOURS = frozenset((6, 12, 24, 48, 168))
 _BASELINE_ORIGINS = frozenset(("manual", "scheduled"))
+
+
+def _canonical_timestamp(value: str) -> str:
+    return iso_z(parse_iso(value))
 
 
 def _ensure_schema(conn: sqlite3.Connection, db_path) -> None:
@@ -109,7 +113,7 @@ def insert_baseline(
     record = BaselineRecord(
         id=_new_id(),
         label=label,
-        captured_at=captured_at or now_iso(),
+        captured_at=_canonical_timestamp(captured_at) if captured_at is not None else now_iso(),
         checks=checks,
         peers=peers,
         listeners=listeners,
@@ -217,6 +221,7 @@ def save_schedule(enabled: bool, interval_hours: int, db_path=None) -> BaselineS
 
 
 def mark_schedule_success(captured_at: str, db_path=None) -> BaselineScheduleRecord:
+    captured_at = _canonical_timestamp(captured_at)
     conn = dbmod.get_conn(db_path)
     _ensure_schema(conn, db_path)
     conn.execute(
@@ -224,8 +229,9 @@ def mark_schedule_success(captured_at: str, db_path=None) -> BaselineScheduleRec
         UPDATE baseline_schedule
         SET last_success_at = ?, last_error = NULL
         WHERE singleton = 1
+          AND (last_success_at IS NULL OR julianday(last_success_at) <= julianday(?))
         """,
-        (captured_at,),
+        (captured_at, captured_at),
     )
     return get_schedule(db_path)
 
@@ -247,7 +253,7 @@ def get_most_recent_scheduled_baseline(db_path=None) -> Optional[BaselineRecord]
         """
         SELECT * FROM baselines
         WHERE origin = 'scheduled'
-        ORDER BY captured_at DESC
+        ORDER BY julianday(captured_at) DESC
         LIMIT 1
         """
     ).fetchone()
@@ -255,10 +261,14 @@ def get_most_recent_scheduled_baseline(db_path=None) -> Optional[BaselineRecord]
 
 
 def delete_scheduled_before(cutoff: str, db_path=None) -> int:
+    cutoff = _canonical_timestamp(cutoff)
     conn = dbmod.get_conn(db_path)
     _ensure_schema(conn, db_path)
     result = conn.execute(
-        "DELETE FROM baselines WHERE origin = 'scheduled' AND captured_at < ?",
+        """
+        DELETE FROM baselines
+        WHERE origin = 'scheduled' AND julianday(captured_at) < julianday(?)
+        """,
         (cutoff,),
     )
     return result.rowcount
