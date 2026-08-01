@@ -64,9 +64,17 @@ export function useLanScan() {
 
   const cancel = useCallback(async () => {
     if (!job) return;
-    const res = await cancelLanScan(job.job_id);
-    setJob(res);
-    stopPolling();
+    setError(null);
+    try {
+      const res = await cancelLanScan(job.job_id);
+      setJob(res);
+      stopPolling();
+    } catch (err) {
+      // Cancel failed — the scan may still be running, so keep polling and
+      // surface the message. Rethrow so callers can react if they need to.
+      setError(errMessage(err));
+      throw err;
+    }
   }, [job, stopPolling]);
 
   return { job, starting, error, start, cancel };

@@ -45,9 +45,26 @@ export function useStatsSummary(window: StatsWindow): UseStatsSummaryResult {
   useLiveFrames((frame) => {
     if (frame.type !== "stats") return;
     const summary = frame.data as StatsSummary;
-    // The backend's live push may reflect its own operating window; keep the
-    // frontend's selected window label stable while taking the fresh numbers.
-    setData({ ...summary, window });
+    // Live pushes are always 5-minute summaries (the backend's operating
+    // window). Merging one wholesale into a 1h/24h view would clobber those
+    // totals with 5-minute numbers under the wider label, so the full frame
+    // is adopted only when 5m is selected; for wider windows only the
+    // instantaneous fields (current throughput, active flows) are taken,
+    // since those don't depend on the aggregation window.
+    if (window === "5m") {
+      setData({ ...summary, window });
+    } else {
+      setData(
+        (cur) =>
+          cur && {
+            ...cur,
+            generated_at: summary.generated_at,
+            throughput_bps_in: summary.throughput_bps_in,
+            throughput_bps_out: summary.throughput_bps_out,
+            active_flows: summary.active_flows,
+          },
+      );
+    }
     historyRef.current = [...historyRef.current, summary.throughput_bps_in + summary.throughput_bps_out].slice(-20);
     forceTick((t) => t + 1);
   });

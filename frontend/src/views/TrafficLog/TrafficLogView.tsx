@@ -28,6 +28,7 @@ export function TrafficLogView() {
   const [liveTailOn, setLiveTailOn] = useState(true);
   const [paused, setPaused] = useState(false);
   const [selected, setSelected] = useState<TrafficLogEntry | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const query: TrafficLogQuery = useMemo(() => {
     const rangeMs = RANGE_MS[filters.timeRange];
@@ -55,7 +56,12 @@ export function TrafficLogView() {
   };
 
   const handleExport = (format: "csv" | "json") => {
-    void exportTrafficLog(query, format);
+    setExportError(null);
+    // exportTrafficLog no longer falls back to mock rows on an auth/server
+    // error — it throws instead, so surface that here.
+    exportTrafficLog(query, format).catch((err) => {
+      setExportError(err instanceof Error ? err.message : String(err));
+    });
   };
 
   return (
@@ -74,6 +80,8 @@ export function TrafficLogView() {
           {pendingCount} new {pendingCount === 1 ? "row" : "rows"} — click to show
         </button>
       )}
+
+      {exportError && <ErrorState title="Export failed" detail={exportError} />}
 
       {error && <ErrorState title="Couldn't load the traffic log" detail={error} />}
       {!error && loading && entries.length === 0 && <SkeletonRows rows={10} height={24} />}

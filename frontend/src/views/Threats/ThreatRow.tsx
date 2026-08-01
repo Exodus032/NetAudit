@@ -20,14 +20,19 @@ export function ThreatRow({
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const isAck = threat.status === "acknowledged";
   const isResolved = threat.status === "resolved";
 
   const handleToggleAck = async () => {
     setBusy(true);
+    setActionError(null);
     try {
       if (isAck) await onUnacknowledge(threat.id);
       else await onAcknowledge(threat.id);
+    } catch (err) {
+      // The hook already rolled the optimistic update back; just say why.
+      setActionError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
@@ -48,6 +53,12 @@ export function ThreatRow({
           </button>
         )}
       </div>
+
+      {actionError && (
+        <div className="threat-action-error" role="alert">
+          Couldn't update: {actionError}
+        </div>
+      )}
 
       {threat.mitre.length > 0 && (
         <div className="mitre-badges">

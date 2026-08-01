@@ -63,7 +63,17 @@ export function LanScanView() {
 
   const handleStart = async () => {
     if (tooManyPorts || parsedPorts.length === 0 || !subnet.trim()) return;
-    await start({ subnet, ports: parsedPorts, rate_limit_pps: Math.min(ratePps, LAN_SCAN_LIMITS.maxRatePps) });
+    try {
+      await start({ subnet, ports: parsedPorts, rate_limit_pps: Math.min(ratePps, LAN_SCAN_LIMITS.maxRatePps) });
+    } catch {
+      // useLanScan stored the message in `error`, rendered above the actions.
+    }
+  };
+
+  const handleCancel = () => {
+    cancel().catch(() => {
+      // Same: the hook surfaces the failure through its `error` state.
+    });
   };
 
   return (
@@ -142,7 +152,7 @@ export function LanScanView() {
                 {starting ? "Starting…" : "Start scan"}
               </button>
             ) : (
-              <button className="pro-btn pro-btn-danger" onClick={() => void cancel()}>Cancel scan</button>
+              <button className="pro-btn pro-btn-danger" onClick={handleCancel}>Cancel scan</button>
             )}
           </div>
         </div>

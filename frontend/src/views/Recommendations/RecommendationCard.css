@@ -24,6 +24,12 @@
   margin-bottom: 8px;
 }
 
+.rec-action-error {
+  color: var(--status-critical);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
 .rec-confidence {
   font-size: 11px;
   color: var(--text-muted);

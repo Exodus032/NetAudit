@@ -15,7 +15,11 @@ export function useSecurityScore() {
     const load = () =>
       getSecurityScore()
         .then((res) => {
-          if (!cancelled) setData(res);
+          if (cancelled) return;
+          setData(res);
+          // A later poll succeeding must clear a transient earlier failure,
+          // or the tile stays hidden until reload.
+          setError(null);
         })
         .catch((err) => {
           if (!cancelled) setError(err instanceof Error ? err.message : String(err));

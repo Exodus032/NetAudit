@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { StatsWindow } from "../../api/types";
 import type { ViewId } from "../../components/layout/Sidebar";
 import { useStatsSummary } from "../../hooks/useStatsSummary";
-import { useTimeseries } from "../../hooks/useTimeseries";
+import { useTimeseries, WINDOW_BUCKET } from "../../hooks/useTimeseries";
 import { useCaptureStatus } from "../../hooks/useCaptureStatus";
 import { StatTile } from "../../components/common/StatTile";
 import { WindowSelector } from "../../components/common/WindowSelector";
@@ -88,7 +88,7 @@ export function OverviewView({ onNavigate }: { onNavigate: (view: ViewId) => voi
           <WindowSelector value={window} onChange={setWindow} />
         </div>
         <div className="panel">
-          <ThroughputChart points={points} loading={seriesLoading} />
+          <ThroughputChart points={points} loading={seriesLoading} bucketSeconds={WINDOW_BUCKET[window]} />
         </div>
       </section>
 

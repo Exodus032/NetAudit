@@ -43,6 +43,12 @@
   cursor: default;
 }
 
+.threat-action-error {
+  color: var(--status-critical);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
 .mitre-badges {
   display: flex;
   flex-wrap: wrap;

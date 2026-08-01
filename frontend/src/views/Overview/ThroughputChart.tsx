@@ -4,10 +4,23 @@ import { formatBytes, formatTime } from "../../lib/format";
 import { SkeletonRows } from "../../components/common/States";
 import "./ThroughputChart.css";
 
-function TooltipContent({ active, payload, label }: { active?: boolean; payload?: Array<{ value: number; dataKey: string }>; label?: string }) {
+function TooltipContent({
+  active,
+  payload,
+  label,
+  bucketSeconds,
+}: {
+  active?: boolean;
+  payload?: Array<{ value: number; dataKey: string }>;
+  label?: string;
+  bucketSeconds: number;
+}) {
   if (!active || !payload || payload.length === 0) return null;
-  const inVal = payload.find((p) => p.dataKey === "bytes_in")?.value ?? 0;
-  const outVal = payload.find((p) => p.dataKey === "bytes_out")?.value ?? 0;
+  // Series values are bytes accumulated over one bucket (5s–900s depending on
+  // the selected window), so divide by the bucket width before labelling the
+  // number as a per-second rate.
+  const inVal = (payload.find((p) => p.dataKey === "bytes_in")?.value ?? 0) / bucketSeconds;
+  const outVal = (payload.find((p) => p.dataKey === "bytes_out")?.value ?? 0) / bucketSeconds;
   return (
     <div className="chart-tooltip">
       <div className="chart-tooltip-time">{label ? formatTime(label) : ""}</div>
@@ -23,7 +36,7 @@ function TooltipContent({ active, payload, label }: { active?: boolean; payload?
   );
 }
 
-export function ThroughputChart({ points, loading }: { points: TimeseriesPoint[]; loading: boolean }) {
+export function ThroughputChart({ points, loading, bucketSeconds }: { points: TimeseriesPoint[]; loading: boolean; bucketSeconds: number }) {
   if (loading && points.length === 0) return <SkeletonRows rows={6} height={20} />;
   if (points.length === 0) {
     return <div className="chart-empty">No traffic observed in this window yet.</div>;
@@ -56,7 +69,7 @@ export function ThroughputChart({ points, loading }: { points: TimeseriesPoint[]
           tick={{ fill: "var(--text-muted)", fontSize: 11 }}
           width={64}
         />
-        <Tooltip content={<TooltipContent />} />
+        <Tooltip content={<TooltipContent bucketSeconds={bucketSeconds} />} />
         <Legend
           verticalAlign="top"
           height={28}

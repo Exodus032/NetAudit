@@ -19,6 +19,18 @@ export function AlertsView() {
   const { history, loading: historyLoading, error: historyError } = useAlertsHistory();
 
   const [draft, setDraft] = useState<AlertsConfig | null>(null);
+  const [testErrors, setTestErrors] = useState<Record<string, string>>({});
+
+  const handleTest = (id: string) => {
+    setTestErrors((cur) => {
+      const next = { ...cur };
+      delete next[id];
+      return next;
+    });
+    test(id).catch((err) => {
+      setTestErrors((cur) => ({ ...cur, [id]: err instanceof Error ? err.message : String(err) }));
+    });
+  };
 
   useEffect(() => {
     if (config) setDraft(config);
@@ -138,6 +150,7 @@ export function AlertsView() {
                     <div className="pro-card-meta">
                       {c.last_attempt && <span>Last attempt {formatDateTime(c.last_attempt)}</span>}
                       {testResult && <span>Test: {testResult.status}{testResult.detail ? ` — ${testResult.detail}` : ""}</span>}
+                      {testErrors[c.id] && <span className="pro-inline-error">Test failed: {testErrors[c.id]}</span>}
                     </div>
                   </div>
                   <div className="pro-card-actions">
@@ -145,7 +158,7 @@ export function AlertsView() {
                       <input type="checkbox" checked={c.enabled} onChange={(e) => updateChannel(c.id, { enabled: e.target.checked })} />
                       Enabled
                     </label>
-                    <button className="pro-btn" onClick={() => void test(c.id)} disabled={pending === c.id}>
+                    <button className="pro-btn" onClick={() => handleTest(c.id)} disabled={pending === c.id}>
                       {pending === c.id ? "Sending…" : "Send test alert"}
                     </button>
                     {c.kind === "webhook" && (

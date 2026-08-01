@@ -1,12 +1,15 @@
 // Singleton live-data manager. Wraps the real `/ws/live` websocket with
 // exponential backoff reconnect, and transparently swaps to the in-memory
 // mock ticker (src/mocks/store.ts) when mocks are forced or the real socket
-// can't be reached after a few attempts. Frames are fanned out to any number
-// of subscribers regardless of type, order, or gaps.
+// can't be reached after a few attempts. Mock mode is never a one-way door:
+// while on mock frames the manager keeps probing the real socket in the
+// background, and jumps back immediately once REST reports the backend is
+// reachable. Frames are fanned out to any number of subscribers regardless
+// of type, order, or gaps.
 
-import { getBackendMode, setBackendMode } from "./backendMode";
+import { getBackendMode, setBackendMode, subscribeBackendMode } from "./backendMode";
 import { ensureToken, invalidateToken } from "./auth";
-import { startMockTicker, subscribe as subscribeMockTicker } from "../mocks/store";
+import { startMockTicker, stopMockTicker, subscribe as subscribeMockTicker } from "../mocks/store";
 import type { WsFrame } from "./types";
 
 export type ConnectionState = "connecting" | "open" | "reconnecting" | "closed";
@@ -15,6 +18,7 @@ const FORCE_MOCKS = import.meta.env.VITE_USE_MOCKS === "1";
 const MAX_REAL_ATTEMPTS = 3;
 const BASE_BACKOFF_MS = 1000;
 const MAX_BACKOFF_MS = 30_000;
+const MOCK_RETRY_MS = 30_000;
 
 type FrameHandler = (frame: WsFrame) => void;
 type StateHandler = (state: ConnectionState) => void;
@@ -26,13 +30,24 @@ class LiveSocketManager {
   private state: ConnectionState = "connecting";
   private attempts = 0;
   private usingMock = false;
+  private connectingReal = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private mockRetryTimer: ReturnType<typeof setInterval> | null = null;
   private unsubMock: (() => void) | null = null;
+  private unsubBackendMode: (() => void) | null = null;
   private started = false;
 
   start(): void {
     if (this.started) return;
     this.started = true;
+    if (!FORCE_MOCKS) {
+      // If REST reaches the real backend while we're feeding mock frames,
+      // those fabricated frames would silently overwrite real data — drop
+      // them and reconnect the real socket instead.
+      this.unsubBackendMode = subscribeBackendMode(() => {
+        if (getBackendMode() === "real" && this.usingMock) this.resumeReal();
+      });
+    }
     if (FORCE_MOCKS || getBackendMode() === "fallback-mock") {
       this.connectMock();
     } else {
@@ -80,6 +95,35 @@ class LiveSocketManager {
       this.unsubMock?.();
       this.unsubMock = subscribeMockTicker((frame) => this.emit(frame as WsFrame));
     }, 250);
+    // Keep probing the real socket while in fallback mock mode. connectReal()
+    // leaves the mock feed running until a real connection actually opens.
+    if (!FORCE_MOCKS && !this.mockRetryTimer) {
+      this.mockRetryTimer = setInterval(() => this.connectReal(), MOCK_RETRY_MS);
+    }
+  }
+
+  /** Stops mock frame delivery, the mock ticker, and the background retry
+   * loop. Called the moment real data takes over so no fabricated frame can
+   * be delivered alongside (or after) real ones. */
+  private detachMock() {
+    this.usingMock = false;
+    this.unsubMock?.();
+    this.unsubMock = null;
+    if (this.mockRetryTimer) {
+      clearInterval(this.mockRetryTimer);
+      this.mockRetryTimer = null;
+    }
+    stopMockTicker();
+  }
+
+  /** REST reached the real backend while we were on mock frames: stop the
+   * fabricated feed immediately and reconnect the real socket. */
+  private resumeReal() {
+    if (!this.usingMock) return;
+    this.detachMock();
+    this.attempts = 0;
+    this.setState("reconnecting");
+    this.connectReal();
   }
 
   /** Tears down whichever transport is active. Not currently called by the
@@ -88,14 +132,22 @@ class LiveSocketManager {
   dispose(): void {
     this.unsubMock?.();
     this.unsubMock = null;
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.unsubBackendMode?.();
+    this.unsubBackendMode = null;
+    clearTimeout(this.reconnectTimer ?? undefined);
+    clearInterval(this.mockRetryTimer ?? undefined);
+    this.reconnectTimer = null;
+    this.mockRetryTimer = null;
     this.ws?.close();
     this.ws = null;
   }
 
   private async connectReal() {
-    if (this.usingMock) return;
-    this.setState(this.attempts === 0 ? "connecting" : "reconnecting");
+    if (this.connectingReal || this.ws) return;
+    this.connectingReal = true;
+    // When probing from mock mode, keep the mock feed (and its "open" state)
+    // running; subscribers only switch over once the real socket opens.
+    if (!this.usingMock) this.setState(this.attempts === 0 ? "connecting" : "reconnecting");
 
     // Per docs/API_CONTRACT_V2_SECURITY.md Part C item 2: the socket must
     // carry the bootstrap token as ?token=. If we can't get one, treat it the
@@ -104,10 +156,10 @@ class LiveSocketManager {
     try {
       token = await ensureToken();
     } catch {
+      this.connectingReal = false;
       this.handleRealFailure();
       return;
     }
-    if (this.usingMock) return; // a mock fallback may have started while we awaited
 
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
     const url = `${proto}//${window.location.host}/ws/live?token=${encodeURIComponent(token)}`;
@@ -115,13 +167,17 @@ class LiveSocketManager {
     try {
       socket = new WebSocket(url);
     } catch {
+      this.connectingReal = false;
       this.handleRealFailure();
       return;
     }
     this.ws = socket;
+    this.connectingReal = false;
 
     socket.addEventListener("open", () => {
       this.attempts = 0;
+      // A real connection is live: the mock feed (if any) stops here.
+      this.detachMock();
       setBackendMode("real");
       this.setState("open");
       try {
@@ -141,7 +197,7 @@ class LiveSocketManager {
     });
 
     socket.addEventListener("close", () => {
-      if (this.usingMock) return;
+      if (this.ws !== socket) return; // superseded (e.g. mock fallback closed us)
       this.handleRealFailure();
     });
 
@@ -157,6 +213,11 @@ class LiveSocketManager {
     // — drop it so the next attempt re-bootstraps rather than retrying the
     // same rejected token in a loop.
     invalidateToken();
+    if (this.usingMock) {
+      // A background probe from mock mode failed — stay on the mock feed and
+      // let the retry timer (or a REST success) trigger the next attempt.
+      return;
+    }
     if (this.attempts >= MAX_REAL_ATTEMPTS && getBackendMode() !== "real") {
       this.connectMock();
       return;
@@ -164,7 +225,7 @@ class LiveSocketManager {
     this.setState("reconnecting");
     const backoff = Math.min(MAX_BACKOFF_MS, BASE_BACKOFF_MS * 2 ** (this.attempts - 1));
     const jitter = backoff * (0.85 + Math.random() * 0.3);
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    clearTimeout(this.reconnectTimer ?? undefined);
     this.reconnectTimer = setTimeout(() => this.connectReal(), jitter);
   }
 }

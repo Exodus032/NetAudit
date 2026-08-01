@@ -14,18 +14,23 @@ export function RecommendationCard({
   isFirst,
 }: {
   rec: Recommendation;
-  onDismiss: (id: string) => void;
-  onRestore: (id: string) => void;
+  onDismiss: (id: string) => Promise<void>;
+  onRestore: (id: string) => Promise<void>;
   highlight: boolean;
   isFirst?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const handleToggle = async () => {
     setBusy(true);
+    setActionError(null);
     try {
       if (rec.dismissed) await onRestore(rec.id);
       else await onDismiss(rec.id);
+    } catch (err) {
+      // The hook already rolled the optimistic update back; just say why.
+      setActionError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
@@ -45,6 +50,12 @@ export function RecommendationCard({
           {rec.dismissed ? "Restore" : "Dismiss"}
         </button>
       </div>
+
+      {actionError && (
+        <div className="rec-action-error" role="alert">
+          Couldn't update: {actionError}
+        </div>
+      )}
 
       <h3 className="rec-title">
         {rec.title}

@@ -3,7 +3,7 @@
 // talks to the real backend at /api (proxied to 127.0.0.1:8787 by Vite) and
 // falls back to mocks automatically if the backend is unreachable.
 
-import { setBackendMode } from "./backendMode";
+import { getBackendMode, setBackendMode } from "./backendMode";
 import { BootstrapError, ensureToken, invalidateToken } from "./auth";
 import {
   mockCaptureClear,
@@ -206,24 +206,58 @@ function toCsv(entries: TrafficLogEntry[]): string {
 export async function exportTrafficLog(query: TrafficLogQuery, format: "csv" | "json" = "csv"): Promise<void> {
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
   const filename = `netaudit-log-${ts}.${format}`;
-  if (!FORCE_MOCKS) {
+  const mode = getBackendMode();
+  if (!FORCE_MOCKS && mode !== "forced-mock" && mode !== "fallback-mock") {
+    // Real backend streams the file directly; a same-origin navigation lets
+    // the browser handle the Content-Disposition download. An <a href> can't
+    // carry the X-NetAudit-Token header, so the token rides the query string
+    // instead (the backend accepts ?token= as an equivalent).
+    const buildUrl = (token: string) => `/api/traffic/export${qs({ ...logQueryToParams(query), format, token })}`;
+    let token: string;
     try {
-      // Real backend streams the file directly; a same-origin navigation lets
-      // the browser handle the Content-Disposition download.
-      const probe = await fetch(`/api/traffic/export${qs({ ...logQueryToParams(query), format })}`, { method: "HEAD" }).catch(() => null);
-      if (probe && probe.ok) {
-        const a = document.createElement("a");
-        a.href = `/api/traffic/export${qs({ ...logQueryToParams(query), format })}`;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        return;
-      }
+      token = await ensureToken();
     } catch {
-      // fall through to mock export below
+      // Couldn't bootstrap a token at all — backend unreachable. Same path
+      // as withFallback(): flip to mock mode, then export mock rows below.
+      setBackendMode("fallback-mock");
+      startMockTicker();
+      return exportMockRows(query, format, filename);
     }
+    let probe = await fetch(buildUrl(token), { method: "HEAD" }).catch(() => null);
+    if (probe && probe.status === 401) {
+      // Stale token (backend restarted with a new one) — drop it and retry
+      // exactly once with a fresh bootstrap, mirroring realFetch().
+      invalidateToken();
+      try {
+        token = await ensureToken();
+        probe = await fetch(buildUrl(token), { method: "HEAD" }).catch(() => null);
+      } catch {
+        probe = null;
+      }
+    }
+    if (probe && probe.ok) {
+      const a = document.createElement("a");
+      a.href = buildUrl(token);
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      return;
+    }
+    if (probe) {
+      // The backend answered but refused the export (auth, bad params,
+      // server error). Surface that — never mask it with fabricated rows.
+      throw new ApiError(probe.status, "export_failed", `export failed with HTTP ${probe.status}`);
+    }
+    // Network failure mid-session: the backend is gone, so fall back to mock
+    // mode the same way every other endpoint does.
+    setBackendMode("fallback-mock");
+    startMockTicker();
   }
+  return exportMockRows(query, format, filename);
+}
+
+async function exportMockRows(query: TrafficLogQuery, format: "csv" | "json", filename: string): Promise<void> {
   const rows = await mockExportRows(query);
   const content = format === "json" ? JSON.stringify(rows, null, 2) : toCsv(rows);
   const blob = new Blob([content], { type: format === "json" ? "application/json" : "text/csv" });
