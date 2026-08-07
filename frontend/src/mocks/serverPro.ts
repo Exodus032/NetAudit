@@ -1037,8 +1037,8 @@ function isPrivateHostname(url: URL): boolean {
 
 export function mockUpdateAlertsConfig(config: AlertsConfig): Promise<AlertsConfig> {
   for (const ch of config.channels) {
-    if (ch.kind !== "webhook" || !ch.enabled) continue;
-    if (!ch.url) return fail("an enabled webhook channel must have a URL");
+    if ((ch.kind !== "webhook" && ch.kind !== "slack") || !ch.enabled) continue;
+    if (!ch.url) return fail("an enabled webhook/Slack channel must have a URL");
     let parsed: URL;
     try {
       parsed = new URL(ch.url);
@@ -1077,7 +1077,7 @@ export function mockTestAlertChannel(channelId: string): Promise<AlertTestResult
           detail = "rejected: URL resolves to a private/loopback address";
         } else {
           status = rand() < 0.85 ? "delivered" : "failed";
-          detail = status === "delivered" ? "webhook responded 2xx" : "webhook did not respond with 2xx";
+          detail = status === "delivered" ? (channel.kind === "slack" ? "Slack webhook responded 2xx" : "webhook responded 2xx") : "webhook did not respond with 2xx";
         }
       } catch {
         status = "failed";

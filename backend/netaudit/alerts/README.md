@@ -1,10 +1,10 @@
 # Alerting
 
 Implements Part F3/F4 of `docs/API_CONTRACT_V3.md`: alert config/channels,
-a desktop toast channel, a webhook channel, `POST /api/alerts/test`, and
-`GET /api/alerts/history`. Persisted to this package's own tables
-(`alerts_config`, `alert_channels`, `alerts_history`) in the shared SQLite
-file.
+a desktop toast channel, a generic webhook channel, a Slack Incoming
+Webhook channel, `POST /api/alerts/test`, and `GET /api/alerts/history`.
+Persisted to this package's own tables (`alerts_config`, `alert_channels`,
+`alerts_history`) in the shared SQLite file.
 
 ## The webhook is the only outbound path, and it is defended in depth
 
@@ -41,16 +41,29 @@ real socket (`RealTransport.send()`), and every request goes through
    endpoint can't make this hang or balloon memory by streaming an
    unbounded response body.
 
-Both `PUT /api/alerts/config` (before persisting a webhook channel) and
+Both `PUT /api/alerts/config` (before persisting a webhook/Slack channel) and
 `AlertService.dispatch()`/`test_channel()` (before every send) call
 `validate_and_resolve()` -- rejecting bad config at save time is a UX nicety,
 not the actual security boundary; the boundary is re-checked at send time.
+
+## Slack channels
+
+A channel with `"kind": "slack"` is a Slack Incoming Webhook URL
+(`https://hooks.slack.com/services/...`) that receives a Slack-flavoured
+payload instead of the generic JSON dict a `webhook` channel gets.
+`slack.py` only formats the message (`build_slack_payload()`: a plain
+`text` line plus a legacy attachment colored by severity, with severity/
+source/source-id/time fields) and hands the actual send to
+`webhook.send_webhook()`. A Slack channel therefore inherits every
+property of the webhook path above -- https-only, SSRF checks re-run on
+every send, 5s timeout, exactly one attempt, failures recorded in
+`last_status` -- without adding a second outbound path.
 
 ## F3 rules and where they're enforced
 
 | Rule | Where |
 |---|---|
-| Disabled by default, user supplies URL | `AlertsConfig.enabled: bool = False`; `_validate_channels()` requires a non-empty `url` on any *enabled* webhook channel |
+| Disabled by default, user supplies URL | `AlertsConfig.enabled: bool = False`; `_validate_channels()` requires a non-empty `url` on any *enabled* webhook/Slack channel |
 | https-only, SSRF rejection | `webhook.validate_and_resolve()`, called from both config save and every send |
 | No redirects | `RealTransport.send()` never reads `Location` |
 | 5s timeout | `webhook.DEFAULT_TIMEOUT_SECONDS = 5.0`, passed through every call |
@@ -117,6 +130,11 @@ transport and a fake desktop sender -- no real socket, no real
   (measured against real inserted history rows), quiet_hours (including a
   window that wraps past midnight), disabled-by-default, and rejection of
   an enabled webhook channel with no URL.
+- `test_slack.py`: Slack payload shape (severity-colored attachment,
+  fields, fallback color for unknown severities), enabled-without-URL and
+  SSRF rejection mirroring the webhook rules, disabled URLs never
+  validated, dispatch/test via a fake transport with a fake resolver
+  (Slack-formatted body, delivered/failed statuses recorded in history).
 - `test_desktop.py`: graceful degradation to `unavailable`/`failed` via a
   fake sender simulating "not Windows", a timeout, and a non-zero exit,
   and confirms the argv passed to `subprocess.run` is a list (never a

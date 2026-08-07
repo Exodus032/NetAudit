@@ -7,7 +7,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 Severity = Literal["critical", "high", "medium", "low", "info"]
-ChannelKind = Literal["desktop", "webhook"]
+ChannelKind = Literal["desktop", "webhook", "slack"]
 ChannelStatus = Literal["delivered", "failed", "unavailable", "rate_limited", "suppressed"]
 
 SEVERITY_ORDER: dict[str, int] = {"info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}

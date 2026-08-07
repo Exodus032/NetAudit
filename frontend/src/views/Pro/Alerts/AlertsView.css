@@ -18,6 +18,14 @@
   align-items: flex-start;
 }
 
+/* A channel card carries up to three actions (enabled, test, remove); on a
+   narrow viewport that row is wider than the card, so let it shrink and
+   wrap instead of overflowing the panel. */
+.alerts-channel-card .pro-card-actions {
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+}
+
 .alerts-webhook-url {
   margin-top: 6px;
   width: 100%;

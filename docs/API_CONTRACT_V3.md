@@ -443,6 +443,9 @@ never guess a `pass`.
     {"id": "desktop", "kind": "desktop", "enabled": true},
     {"id": "webhook-1", "kind": "webhook", "enabled": false,
      "url": "https://hooks.example.com/xxx", "template": "json",
+     "last_status": null, "last_attempt": null},
+    {"id": "slack-1", "kind": "slack", "enabled": false,
+     "url": "https://hooks.slack.com/services/T00/B00/xxx", "template": "json",
      "last_status": null, "last_attempt": null}
   ],
   "rate_limit_per_hour": 20,
@@ -450,11 +453,15 @@ never guess a `pass`.
 }
 ```
 
-Webhook rules: disabled by default, user must supply the URL, `https` only
-(reject `http` and any non-public scheme with 400), no redirects followed, 5s
-timeout, failures logged and surfaced in `last_status` but never retried in a
-tight loop. **A webhook URL is the only outbound destination this tool will ever
-contact, and only when the user has explicitly enabled it.**
+Webhook rules (applied to both `webhook` and `slack` channels): disabled by
+default, user must supply the URL, `https` only (reject `http` and any
+non-public scheme with 400), no redirects followed, 5s timeout, failures
+logged and surfaced in `last_status` but never retried in a tight loop. A
+`slack` channel is a Slack Incoming Webhook URL and receives the same
+message formatted as a Slack payload (severity-colored attachment with
+severity/source/time fields) instead of the generic JSON dict a `webhook`
+channel gets. **A webhook URL is the only outbound destination this tool
+will ever contact, and only when the user has explicitly enabled it.**
 
 `POST /api/alerts/test` sends one test alert to a named channel and reports the
 result. `GET /api/alerts/history` lists what was sent.

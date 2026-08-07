@@ -320,7 +320,7 @@ export interface ComplianceReport {
 // F3-F4: alerting
 // =======================================================================
 
-export type AlertChannelKind = "desktop" | "webhook";
+export type AlertChannelKind = "desktop" | "webhook" | "slack";
 export type AlertChannelStatus = "delivered" | "failed" | "unavailable" | "rate_limited" | "suppressed";
 
 export interface QuietHours {

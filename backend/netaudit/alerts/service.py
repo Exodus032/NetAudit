@@ -29,6 +29,7 @@ from .models import (
     QuietHours,
     SEVERITY_ORDER,
 )
+from .slack import send_slack
 from .webhook import Transport, WebhookRejected, send_webhook, validate_and_resolve
 
 
@@ -74,16 +75,44 @@ def _validate_channels(channels: list[AlertChannel]) -> None:
         if ch.id in seen_ids:
             raise AlertConfigError("duplicate_channel", f"duplicate channel id {ch.id!r}")
         seen_ids.add(ch.id)
-        if ch.kind != "webhook":
+        if ch.kind not in ("webhook", "slack"):
             continue
         if not ch.enabled:
             continue  # F3: disabled by default -- a disabled webhook's URL is never touched, even to validate it
         if not ch.url or not ch.url.strip():
-            raise AlertConfigError("missing_url", f"webhook channel {ch.id!r} is enabled but has no url")
+            raise AlertConfigError("missing_url", f"{ch.kind} channel {ch.id!r} is enabled but has no url")
         try:
             validate_and_resolve(ch.url)
         except WebhookRejected as exc:
-            raise AlertConfigError(exc.code, f"webhook channel {ch.id!r}: {exc.message}") from exc
+            raise AlertConfigError(exc.code, f"{ch.kind} channel {ch.id!r}: {exc.message}") from exc
+
+
+def _send_remote_channel(
+    kind: str,
+    url: str,
+    *,
+    title: str,
+    severity: str,
+    source: str,
+    source_id: str,
+    ts: str,
+    transport: Optional[Transport],
+) -> str:
+    """POST one alert to a webhook/Slack URL through the single sanctioned
+    outbound path (webhook.send_webhook). Returns 'delivered' or 'failed' --
+    a rejected or failed send is a status, never an exception."""
+    try:
+        if kind == "slack":
+            result = send_slack(url, title=title, severity=severity, source=source, source_id=source_id, ts=ts, transport=transport)
+        else:
+            result = send_webhook(
+                url,
+                {"title": title, "severity": severity, "source": source, "source_id": source_id, "ts": ts},
+                transport=transport,
+            )
+    except WebhookRejected:
+        return "failed"
+    return "delivered" if result.ok else "failed"
 
 
 def _is_quiet_now(quiet: Optional[QuietHours]) -> bool:
@@ -133,17 +162,25 @@ class AlertService:
             store.update_channel_status(channel_id, result.status, self._db_path)
             return AlertTestResult(channel_id=channel_id, status=result.status, detail=result.detail, attempted_at=attempted_at)
 
-        if row["kind"] == "webhook":
+        if row["kind"] in ("webhook", "slack"):
             url = row.get("url")
             if not url:
                 store.update_channel_status(channel_id, "failed", self._db_path)
                 return AlertTestResult(channel_id=channel_id, status="failed", detail="no url configured", attempted_at=attempted_at)
             try:
-                result = send_webhook(
-                    url,
-                    {"title": "NetAudit test alert", "severity": "info", "source": "alerts", "ts": attempted_at},
-                    transport=transport,
-                )
+                if row["kind"] == "slack":
+                    result = send_slack(
+                        url,
+                        title="NetAudit test alert", severity="info", source="alerts",
+                        source_id="manual-test", ts=attempted_at,
+                        transport=transport,
+                    )
+                else:
+                    result = send_webhook(
+                        url,
+                        {"title": "NetAudit test alert", "severity": "info", "source": "alerts", "ts": attempted_at},
+                        transport=transport,
+                    )
             except WebhookRejected as exc:
                 store.update_channel_status(channel_id, "failed", self._db_path)
                 return AlertTestResult(channel_id=channel_id, status="failed", detail=exc.message, attempted_at=attempted_at)
@@ -220,12 +257,11 @@ class AlertService:
                 result = send_desktop_notification(title, f"[{severity}] {source}: {title}", sender=desktop_sender)
                 store.update_channel_status(ch.id, result.status, self._db_path)
                 channel_results.append(AlertHistoryChannelResult(id=ch.id, status=result.status))
-            elif ch.kind == "webhook" and ch.url:
-                try:
-                    result = send_webhook(ch.url, {"title": title, "severity": severity, "source": source, "source_id": source_id, "ts": ts}, transport=transport)
-                    status = "delivered" if result.ok else "failed"
-                except WebhookRejected:
-                    status = "failed"
+            elif ch.kind in ("webhook", "slack") and ch.url:
+                status = _send_remote_channel(
+                    ch.kind, ch.url, title=title, severity=severity,
+                    source=source, source_id=source_id, ts=ts, transport=transport,
+                )
                 store.update_channel_status(ch.id, status, self._db_path)
                 channel_results.append(AlertHistoryChannelResult(id=ch.id, status=status))
 

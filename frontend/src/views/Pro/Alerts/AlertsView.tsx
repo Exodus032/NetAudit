@@ -13,6 +13,10 @@ function newWebhookChannel(): AlertChannel {
   return { id: `webhook-${Date.now().toString(36)}`, kind: "webhook", enabled: false, url: "", template: "json", last_status: null, last_attempt: null };
 }
 
+function newSlackChannel(): AlertChannel {
+  return { id: `slack-${Date.now().toString(36)}`, kind: "slack", enabled: false, url: "", template: "json", last_status: null, last_attempt: null };
+}
+
 export function AlertsView() {
   const { config, loading, error, saving, saveError, save } = useAlertsConfig();
   const { pending, results, test } = useAlertTest();
@@ -52,6 +56,10 @@ export function AlertsView() {
     setDraft((cur) => cur && { ...cur, channels: [...cur.channels, newWebhookChannel()] });
   };
 
+  const addSlack = () => {
+    setDraft((cur) => cur && { ...cur, channels: [...cur.channels, newSlackChannel()] });
+  };
+
   const removeChannel = (id: string) => {
     setDraft((cur) => cur && { ...cur, channels: cur.channels.filter((c) => c.id !== id) });
   };
@@ -72,9 +80,9 @@ export function AlertsView() {
         <div className="pro-notice">
           <span className="pro-notice-icon" aria-hidden="true">🛡</span>
           <div>
-            A webhook URL is the only outbound network destination NetAudit will ever contact, and only after you
-            enable it here. It must be <code className="mono">https</code>, and every send is re-validated against
-            private/loopback address ranges — including DNS rebinding, at send time, not just when you save.
+            A webhook URL (generic or Slack) is the only outbound network destination NetAudit will ever contact, and
+            only after you enable it here. It must be <code className="mono">https</code>, and every send is re-validated
+            against private/loopback address ranges — including DNS rebinding, at send time, not just when you save.
           </div>
         </div>
 
@@ -136,13 +144,13 @@ export function AlertsView() {
                 <div key={c.id} className="pro-card alerts-channel-card">
                   <div className="pro-card-main">
                     <div className="pro-card-title">
-                      {c.kind === "desktop" ? "Desktop notification" : "Webhook"}
+                      {c.kind === "desktop" ? "Desktop notification" : c.kind === "slack" ? "Slack webhook" : "Webhook"}
                       {c.last_status && <span className={`alerts-last-status alerts-status-${c.last_status}`}>{c.last_status}</span>}
                     </div>
-                    {c.kind === "webhook" && (
+                    {(c.kind === "webhook" || c.kind === "slack") && (
                       <input
                         className="pro-input alerts-webhook-url"
-                        placeholder="https://hooks.example.com/…"
+                        placeholder={c.kind === "slack" ? "https://hooks.slack.com/services/…" : "https://hooks.example.com/…"}
                         value={c.url ?? ""}
                         onChange={(e) => updateChannel(c.id, { url: e.target.value })}
                       />
@@ -161,7 +169,7 @@ export function AlertsView() {
                     <button className="pro-btn" onClick={() => handleTest(c.id)} disabled={pending === c.id}>
                       {pending === c.id ? "Sending…" : "Send test alert"}
                     </button>
-                    {c.kind === "webhook" && (
+                    {c.kind !== "desktop" && (
                       <button className="pro-btn pro-btn-danger" onClick={() => removeChannel(c.id)}>Remove</button>
                     )}
                   </div>
@@ -172,6 +180,7 @@ export function AlertsView() {
 
           <div className="pro-section-actions">
             <button className="pro-btn" onClick={addWebhook}>Add webhook channel</button>
+            <button className="pro-btn" onClick={addSlack}>Add Slack channel</button>
             <span className="pro-spacer" />
             {saveError && <span className="pro-inline-error">{saveError}</span>}
             <button className="pro-btn pro-btn-primary" onClick={handleSave} disabled={saving}>
