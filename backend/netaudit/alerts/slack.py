@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+from .enrichment import enrichment_summary
 from .webhook import DEFAULT_TIMEOUT_SECONDS, Transport, WebhookResult, send_webhook
 
 # Slack attachment color per NetAudit severity, matching the dashboard's
@@ -25,7 +26,7 @@ SEVERITY_COLORS = {
 }
 
 
-def build_slack_payload(*, title: str, severity: str, source: str, source_id: str, ts: str) -> dict:
+def build_slack_payload(*, title: str, severity: str, source: str, source_id: str, ts: str, enrichment: Optional[dict] = None) -> dict:
     """Builds the JSON body for a Slack Incoming Webhook.
 
     Uses a plain `text` fallback plus a legacy attachment so the message is
@@ -34,18 +35,23 @@ def build_slack_payload(*, title: str, severity: str, source: str, source_id: st
     fields.
     """
     color = SEVERITY_COLORS.get(severity, SEVERITY_COLORS["info"])
+    fields = [
+        {"title": "Severity", "value": severity, "short": True},
+        {"title": "Source", "value": source, "short": True},
+        {"title": "Source ID", "value": source_id, "short": True},
+        {"title": "Time", "value": ts, "short": True},
+    ]
+    if enrichment:
+        summary = enrichment_summary(enrichment)
+        if summary:
+            fields.append({"title": "IP enrichment", "value": summary, "short": False})
     return {
         "text": f"*[{severity}] {source}* - {title}",
         "attachments": [
             {
                 "color": color,
                 "title": title,
-                "fields": [
-                    {"title": "Severity", "value": severity, "short": True},
-                    {"title": "Source", "value": source, "short": True},
-                    {"title": "Source ID", "value": source_id, "short": True},
-                    {"title": "Time", "value": ts, "short": True},
-                ],
+                "fields": fields,
                 "footer": "NetAudit",
             }
         ],
@@ -62,9 +68,10 @@ def send_slack(
     ts: str,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
     transport: Optional[Transport] = None,
+    enrichment: Optional[dict] = None,
 ) -> WebhookResult:
     """Sends one Slack alert through the same validated outbound path as a
     generic webhook (`webhook.send_webhook`): fresh https-only + SSRF
     validation on every call, exactly one attempt, no retries."""
-    payload = build_slack_payload(title=title, severity=severity, source=source, source_id=source_id, ts=ts)
+    payload = build_slack_payload(title=title, severity=severity, source=source, source_id=source_id, ts=ts, enrichment=enrichment)
     return send_webhook(url, payload, timeout=timeout, transport=transport)

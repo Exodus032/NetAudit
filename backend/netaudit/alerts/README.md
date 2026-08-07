@@ -2,9 +2,11 @@
 
 Implements Part F3/F4 of `docs/API_CONTRACT_V3.md`: alert config/channels,
 a desktop toast channel, a generic webhook channel, a Slack Incoming
-Webhook channel, `POST /api/alerts/test`, and `GET /api/alerts/history`.
+Webhook channel, `POST /api/alerts/test`, and `GET /api/alerts/history`,
+plus F5 IP reputation enrichment (AbuseIPDB/VirusTotal) with auto-tagging.
 Persisted to this package's own tables (`alerts_config`, `alert_channels`,
-`alerts_history`) in the shared SQLite file.
+`alerts_history`, `enrichment_config`, `enrichment_providers`,
+`enrichment_cache`, `enrichment_usage`) in the shared SQLite file.
 
 ## The webhook is the only outbound path, and it is defended in depth
 
@@ -40,6 +42,12 @@ real socket (`RealTransport.send()`), and every request goes through
 8. **Bounded response read** (4096 bytes) -- a malicious or broken webhook
    endpoint can't make this hang or balloon memory by streaming an
    unbounded response body.
+
+Enrichment lookups (below) go through the same choke point via
+`webhook.send_request()` (GET, no body, same `validate_and_resolve()` +
+`Transport`/`RealTransport` machinery), so there is still exactly one
+socket-capable function in the whole package, and the AST guard in
+`test_no_stray_network_calls.py` covers the enrichment code too.
 
 Both `PUT /api/alerts/config` (before persisting a webhook/Slack channel) and
 `AlertService.dispatch()`/`test_channel()` (before every send) call
@@ -78,6 +86,59 @@ action to check a channel actually works (including checking a channel
 that isn't turned on yet), not part of the automatic dispatch pipeline
 those filters govern. It still goes through the full webhook validation
 path.
+
+## IP reputation enrichment (AbuseIPDB / VirusTotal)
+
+`enrichment.py` looks up the *public* IP indicators of newly detected
+threats against AbuseIPDB and/or VirusTotal using the **user's own API
+keys**, stores per-IP results in a cache, and auto-tags the threat row
+(e.g. `abuseipdb-malicious`, `tor-exit`, `vt-malicious`). The webhook and
+Slack payloads for that alert can carry a compact `enrichment` block when
+there are results.
+
+Privacy and safety rules, all enforced in code and tested:
+
+- **Off by default**, and only runs for providers the user enabled with a
+  key in `PUT /api/alerts/enrichment`. An enabled provider without a key
+  is rejected at save time (`missing_key`), and GET never echoes a key
+  back -- only `has_key`.
+- **Only public IPs are ever sent.** `extract_public_ips()` filters
+  indicators to `type == "ip"` and drops RFC1918, loopback, link-local,
+  CGNAT (100.64/10), multicast, unspecified and site-local addresses
+  (IPv4 and IPv6) before any request is built. A 10.x.x.x indicator can
+  never produce a lookup.
+- **Provider hosts are code constants**, so there is no user-supplied URL
+  to SSRF-check; they still go through `send_request()` so DNS is
+  re-resolved fresh and the single outbound path is preserved.
+- **`enrich()` never raises.** A provider failure, timeout (2s hard
+  default per provider), non-2xx, or unparseable body is recorded as an
+  `{"error": ...}` entry per IP/provider and the alert pipeline proceeds
+  unchanged. The dispatcher runs enrichment before dispatching, and a
+  failing enrichment never blocks or fails the alert.
+- **Cache + quota.** Results are cached per IP/provider for
+  `cache_ttl_hours` (default 24h) so a beaconing C2 IP is queried once;
+  per-day request counters (`enrichment_usage`) stop lookups at 90% of
+  the provider's free-tier daily budget (1000/day AbuseIPDB, 500/day
+  VirusTotal) so the user's key quota isn't silently burned.
+- **Key hygiene.** Keys are stored in the local config table like webhook
+  URLs (plaintext at rest), never logged, never echoed by the API. The
+  frontend sends `api_key: null` to keep a stored key and `clear_key` to
+  drop it.
+
+Threat rows gain two additive fields: `tags` (auto-tags) and `enrichment`
+(per-IP results), written by `EnrichmentService.apply_to_threat()` through
+an injected `ThreatStore` (the dispatcher receives the enrichment service
+in `integration.py`'s `wire_pro`). Both columns are migrated onto existing
+DBs by `threat/store.py`'s guarded `ALTER TABLE`.
+
+Endpoints (`alerts/router.py`):
+
+- `GET /api/alerts/enrichment` / `PUT /api/alerts/enrichment` -- config
+  and per-provider keys; `PUT` rejects `missing_key`, `unknown_provider`,
+  `duplicate_provider`, `bad_cache_ttl` with a 400.
+- `POST /api/alerts/enrichment/test` -- one lookup of a benign public IP
+  (`1.1.1.1`) to verify a key, bypassing `enabled`/quota like
+  `POST /api/alerts/test` bypasses the dispatch filters.
 
 ## Desktop notifications
 
@@ -143,3 +204,16 @@ transport and a fake desktop sender -- no real socket, no real
 - `test_router.py`: `GET`/`PUT /api/alerts/config`, `POST /api/alerts/test`,
   `GET /api/alerts/history` via `TestClient` against faked providers,
   including a 400 for a rejected webhook URL.
+- `test_enrichment.py`: the public-IP filter (RFC1918/loopback/link-local/
+  CGNAT/multicast/garbage all dropped, public IPv4+IPv6 kept); provider
+  request building (key in auth header, never the URL); response parsing
+  and tag thresholds (`abuseipdb-malicious` >= 80, `-suspicious` >= 50,
+  `tor-exit`, `vt-malicious`/`vt-suspicious`); config validation
+  (`missing_key`, `unknown_provider`, `duplicate_provider`, `bad_cache_ttl`)
+  and key hygiene (never echoed, `null` keeps, `clear_key` drops); the
+  pipeline (cache hits skip requests, min-severity and enabled gating,
+  quota exhaustion, failures contained as `{"error": ...}`); threat-store
+  persistence; dispatcher integration (enrichment before dispatch, a
+  failing enrichment still lets the alert through, `extra` only passed
+  when non-empty); router round-trip and the test-key endpoint; and the
+  enrichment block landing in webhook/Slack payloads.

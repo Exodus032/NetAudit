@@ -7,6 +7,23 @@ import { ExplainChip } from "../../components/learn/ExplainChip";
 import { formatDateTime, formatNumber } from "../../lib/format";
 import "./ThreatRow.css";
 
+/** One-line rendering of a provider's parsed reputation result: the
+ * AbuseIPDB confidence score, or VirusTotal's malicious/suspicious
+ * counts. An `{error}` entry renders as the error code itself. */
+function formatEnrichment(providerId: string, parsed: Record<string, unknown>): string {
+  if (typeof parsed.error === "string") return parsed.error;
+  if (providerId === "abuseipdb") {
+    const score = parsed.abuse_confidence_score;
+    if (typeof score === "number") return `score ${score}${parsed.is_tor ? " · tor exit" : ""}`;
+    return "no data";
+  }
+  const stats = (parsed.last_analysis_stats ?? {}) as Record<string, unknown>;
+  const malicious = Number(stats.malicious ?? 0);
+  const suspicious = Number(stats.suspicious ?? 0);
+  if (malicious || suspicious) return `${malicious} malicious / ${suspicious} suspicious`;
+  return "no detections";
+}
+
 export function ThreatRow({
   threat,
   onAcknowledge,
@@ -138,6 +155,31 @@ export function ThreatRow({
                 <span key={i} className="threat-indicator-chip mono" title={ind.context}>
                   {ind.type}: {ind.value}
                 </span>
+              ))}
+            </div>
+          )}
+
+          {(threat.tags?.length ?? 0) > 0 && (
+            <div className="threat-tags">
+              <span className="threat-tags-label">Auto-tags</span>
+              {threat.tags?.map((t, i) => (
+                <span key={i} className="threat-tag-chip mono">{t}</span>
+              ))}
+            </div>
+          )}
+
+          {threat.enrichment && Object.keys(threat.enrichment).length > 0 && (
+            <div className="threat-enrichment">
+              <span className="threat-tags-label">IP enrichment</span>
+              {Object.entries(threat.enrichment).map(([ip, providers]) => (
+                <div key={ip} className="threat-enrichment-ip">
+                  <span className="threat-enrichment-addr mono">{ip}</span>
+                  {Object.entries(providers as Record<string, Record<string, unknown>>).map(([providerId, parsed]) => (
+                    <span key={providerId} className="threat-enrichment-provider mono">
+                      {providerId}: {formatEnrichment(providerId, parsed)}
+                    </span>
+                  ))}
+                </div>
               ))}
             </div>
           )}

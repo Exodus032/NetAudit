@@ -48,11 +48,12 @@ class WebhookResult:
     ok: bool
     status_code: Optional[int]
     detail: str
+    body: str = ""  # response body text (bounded read), useful for callers that parse the reply
 
 
 @runtime_checkable
 class Transport(Protocol):
-    def send(self, *, ip: str, port: int, host: str, path: str, body: bytes, headers: dict, timeout: float) -> WebhookResult: ...
+    def send(self, *, ip: str, port: int, host: str, path: str, method: str = "POST", body: bytes, headers: dict, timeout: float) -> WebhookResult: ...
 
 
 def _is_public_ip(ip_str: str) -> bool:
@@ -127,7 +128,7 @@ class RealTransport:
     -- a 3xx response is simply reported as a non-2xx result, never
     re-requested."""
 
-    def send(self, *, ip: str, port: int, host: str, path: str, body: bytes, headers: dict, timeout: float) -> WebhookResult:
+    def send(self, *, ip: str, port: int, host: str, path: str, method: str = "POST", body: bytes, headers: dict, timeout: float) -> WebhookResult:
         try:
             raw_sock = socket.create_connection((ip, port), timeout=timeout)
         except OSError as exc:
@@ -143,11 +144,11 @@ class RealTransport:
         conn = http.client.HTTPSConnection(host, timeout=timeout)
         conn.sock = tls_sock
         try:
-            conn.request("POST", path, body=body, headers=headers)
+            conn.request(method, path, body=body, headers=headers)
             resp = conn.getresponse()
             status = resp.status
-            resp.read(_MAX_RESPONSE_BYTES)
-            return WebhookResult(ok=200 <= status < 300, status_code=status, detail=f"HTTP {status}")
+            resp_body = resp.read(_MAX_RESPONSE_BYTES).decode("utf-8", "replace")
+            return WebhookResult(ok=200 <= status < 300, status_code=status, detail=f"HTTP {status}", body=resp_body)
         except (OSError, http.client.HTTPException, ssl.SSLError) as exc:
             return WebhookResult(ok=False, status_code=None, detail=f"request failed: {exc}")
         finally:
@@ -171,3 +172,25 @@ def send_webhook(url: str, payload: dict, timeout: float = DEFAULT_TIMEOUT_SECON
         "User-Agent": "NetAudit-Alerts/1.0",
     }
     return transport.send(ip=ip, port=port, host=host, path=path, body=body, headers=headers, timeout=timeout)
+
+
+def send_request(
+    url: str,
+    *,
+    method: str = "GET",
+    headers: Optional[dict] = None,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    transport: Optional[Transport] = None,
+) -> WebhookResult:
+    """One request (default GET, no body) to a fixed provider URL through
+    the same validated, fresh-resolved outbound path as `send_webhook`.
+    Used by IP reputation enrichment (AbuseIPDB/VirusTotal), whose hosts
+    are code constants rather than user URLs -- but they still go through
+    this choke point so every outbound request in the backend shares the
+    https-only, SSRF re-validation, exactly-once discipline and the one
+    socket-capable `RealTransport`."""
+    transport = transport or _REAL_TRANSPORT
+    host, ip, port, path = validate_and_resolve(url)
+    headers = dict(headers or {})
+    headers.setdefault("User-Agent", "NetAudit-Alerts/1.0")
+    return transport.send(ip=ip, port=port, host=host, path=path, method=method, body=b"", headers=headers, timeout=timeout)

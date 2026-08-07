@@ -1,4 +1,4 @@
-﻿// Hand-written types mirroring docs/API_CONTRACT.md exactly. Do not diverge from
+// Hand-written types mirroring docs/API_CONTRACT.md exactly. Do not diverge from
 // field names, enum values, or shapes documented there.
 
 export type CaptureMode = "npcap" | "rawsocket" | "polling" | "off";
@@ -471,6 +471,10 @@ export interface Threat {
   false_positive_notes: string;
   recommended_actions: ThreatAction[];
   acknowledged_note?: string;
+  /** Reputation auto-tags (e.g. `abuseipdb-malicious`, `vt-malicious`). */
+  tags?: string[];
+  /** Per-IP reputation results: { ip: { provider_id: parsed } }. */
+  enrichment?: Record<string, Record<string, unknown>>;
 }
 
 export interface ThreatsQuery {

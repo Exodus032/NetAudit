@@ -15,6 +15,10 @@ import type {
   AlertHistoryResponse,
   AlertsConfig,
   AlertTestResult,
+  EnrichmentConfig,
+  EnrichmentConfigUpdate,
+  EnrichmentProviderId,
+  EnrichmentTestResult,
   BaselineDiff,
   BaselineListItem,
   BaselineSchedule,
@@ -118,6 +122,15 @@ const proState = {
     quiet_hours: { start: "23:00", end: "07:00" },
   } as AlertsConfig,
   alertsHistory: [] as AlertHistoryItem[],
+  enrichmentConfig: {
+    enabled: false,
+    min_severity: "medium",
+    cache_ttl_hours: 24,
+    providers: [
+      { id: "abuseipdb", enabled: false, has_key: false, last_status: null, last_attempt: null },
+      { id: "virustotal", enabled: false, has_key: false, last_status: null, last_attempt: null },
+    ],
+  } as EnrichmentConfig,
 };
 
 // =======================================================================
@@ -1104,6 +1117,71 @@ export function mockTestAlertChannel(channelId: string): Promise<AlertTestResult
 
 export function mockAlertsHistory(limit = 200): Promise<AlertHistoryResponse> {
   return delay({ alerts: proState.alertsHistory.slice(0, limit) });
+}
+
+// =======================================================================
+// F5: IP reputation enrichment (AbuseIPDB / VirusTotal)
+// =======================================================================
+
+/** The mock keeps stored keys separately so it can mirror the real API's
+ * key hygiene: GET never returns a key, only `has_key`. */
+const mockEnrichmentKeys: Record<string, string> = {};
+
+function mockEnrichmentConfigView(): EnrichmentConfig {
+  return {
+    ...proState.enrichmentConfig,
+    providers: proState.enrichmentConfig.providers.map((p) => ({
+      ...p,
+      has_key: Boolean(mockEnrichmentKeys[p.id]),
+    })),
+  };
+}
+
+export function mockGetEnrichmentConfig(): Promise<EnrichmentConfig> {
+  return delay(mockEnrichmentConfigView());
+}
+
+export function mockUpdateEnrichmentConfig(config: EnrichmentConfigUpdate): Promise<EnrichmentConfig> {
+  const KNOWN_PROVIDERS: Record<string, boolean> = { abuseipdb: true, virustotal: true };
+  for (const p of config.providers) {
+    if (!KNOWN_PROVIDERS[p.id]) return fail(`unknown provider id: '${p.id}'`);
+    if (!p.enabled) continue;
+    const hasKey = Boolean(p.api_key) || (Boolean(mockEnrichmentKeys[p.id]) && !p.clear_key);
+    if (!hasKey) return fail(`${p.id} provider is enabled but has no API key (add one or disable it)`);
+  }
+  for (const p of config.providers) {
+    if (p.clear_key) delete mockEnrichmentKeys[p.id];
+    else if (p.api_key) mockEnrichmentKeys[p.id] = p.api_key;
+  }
+  proState.enrichmentConfig = {
+    enabled: config.enabled,
+    min_severity: config.min_severity,
+    cache_ttl_hours: config.cache_ttl_hours,
+    providers: proState.enrichmentConfig.providers.map((p) => ({
+      ...p,
+      enabled: config.providers.find((u) => u.id === p.id)?.enabled ?? p.enabled,
+    })),
+  };
+  return delay(mockEnrichmentConfigView());
+}
+
+export function mockTestEnrichmentProvider(providerId: string): Promise<EnrichmentTestResult> {
+  const provider = proState.enrichmentConfig.providers.find((p) => p.id === providerId);
+  const now = isoNow();
+  if (!provider) return fail(`unknown provider id: '${providerId}'`);
+  const pid = providerId as EnrichmentProviderId;
+  if (!mockEnrichmentKeys[providerId]) {
+    return delay({ provider_id: pid, status: "failed", detail: "no API key configured", attempted_at: now });
+  }
+  const status = rand() < 0.9 ? "delivered" : "failed";
+  provider.last_status = status;
+  provider.last_attempt = now;
+  return delay({
+    provider_id: pid,
+    status,
+    detail: status === "delivered" ? `${providerId} API responded 2xx` : `${providerId} API did not respond with 2xx`,
+    attempted_at: now,
+  });
 }
 
 export type { AlertChannel, AlertChannelKind };

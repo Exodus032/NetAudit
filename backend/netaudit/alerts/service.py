@@ -97,19 +97,22 @@ def _send_remote_channel(
     source_id: str,
     ts: str,
     transport: Optional[Transport],
+    extra: Optional[dict] = None,
 ) -> str:
     """POST one alert to a webhook/Slack URL through the single sanctioned
     outbound path (webhook.send_webhook). Returns 'delivered' or 'failed' --
     a rejected or failed send is a status, never an exception."""
     try:
         if kind == "slack":
-            result = send_slack(url, title=title, severity=severity, source=source, source_id=source_id, ts=ts, transport=transport)
-        else:
-            result = send_webhook(
-                url,
-                {"title": title, "severity": severity, "source": source, "source_id": source_id, "ts": ts},
-                transport=transport,
+            result = send_slack(
+                url, title=title, severity=severity, source=source, source_id=source_id, ts=ts,
+                transport=transport, enrichment=(extra or {}).get("enrichment"),
             )
+        else:
+            payload = {"title": title, "severity": severity, "source": source, "source_id": source_id, "ts": ts}
+            if extra:
+                payload.update(extra)
+            result = send_webhook(url, payload, transport=transport)
     except WebhookRejected:
         return "failed"
     return "delivered" if result.ok else "failed"
@@ -218,6 +221,7 @@ class AlertService:
         title: str,
         transport: Optional[Transport] = None,
         desktop_sender: Optional[DesktopSender] = None,
+        extra: Optional[dict] = None,
     ) -> Optional[AlertHistoryItem]:
         """Called by whatever in the backend decided something is worth
         alerting on. Returns None (and writes nothing) if alerting is
@@ -260,7 +264,7 @@ class AlertService:
             elif ch.kind in ("webhook", "slack") and ch.url:
                 status = _send_remote_channel(
                     ch.kind, ch.url, title=title, severity=severity,
-                    source=source, source_id=source_id, ts=ts, transport=transport,
+                    source=source, source_id=source_id, ts=ts, transport=transport, extra=extra,
                 )
                 store.update_channel_status(ch.id, status, self._db_path)
                 channel_results.append(AlertHistoryChannelResult(id=ch.id, status=status))

@@ -622,8 +622,9 @@ class ThreatAlertDispatcher:
 
     HISTORY_SEED_LIMIT = 500
 
-    def __init__(self, alert_service) -> None:
+    def __init__(self, alert_service, enrichment_service=None) -> None:
         self._alerts = alert_service
+        self._enrichment = enrichment_service
         self._alerted: Optional[set[str]] = None
 
     def _seed(self) -> None:
@@ -660,13 +661,37 @@ class ThreatAlertDispatcher:
                 continue
             if threat.get("status") == "resolved":
                 continue
+            # Reputation enrichment runs *before* the alert is dispatched so
+            # the webhook/Slack payload can carry it. It must never block or
+            # fail the alert: every failure is swallowed and the dispatch
+            # proceeds with an empty enrichment block.
+            enrichment: dict = {}
+            tags: list[str] = []
+            if self._enrichment is not None:
+                try:
+                    enrichment = self._enrichment.enrich(
+                        threat.get("indicators") or [],
+                        severity=str(threat.get("severity", "info")),
+                    )
+                    tags = self._enrichment.tags_for(enrichment)
+                except Exception:
+                    logger.exception("threat enrichment failed for %s", threat_id)
+                    enrichment, tags = {}, []
+                if enrichment:
+                    try:
+                        self._enrichment.apply_to_threat(threat_id, enrichment, tags)
+                    except Exception:
+                        logger.debug("could not persist enrichment for %s", threat_id, exc_info=True)
+            dispatch_kwargs = {
+                "severity": str(threat.get("severity", "info")),
+                "source": "threat",
+                "source_id": threat_id,
+                "title": str(threat.get("title", threat_id)),
+            }
+            if enrichment:
+                dispatch_kwargs["extra"] = {"enrichment": enrichment}
             try:
-                entry = self._alerts.dispatch(
-                    severity=str(threat.get("severity", "info")),
-                    source="threat",
-                    source_id=threat_id,
-                    title=str(threat.get("title", threat_id)),
-                )
+                entry = self._alerts.dispatch(**dispatch_kwargs)
             except Exception:
                 logger.exception("alert dispatch failed for threat %s", threat_id)
                 continue
@@ -930,6 +955,7 @@ def wire_pro(app, db_path: Optional[Path] = None) -> None:
     `%LOCALAPPDATA%\\NetAudit\\` location the rest of the backend uses, so
     those two routers need nothing but mounting.
     """
+    from .alerts.enrichment import EnrichmentService, get_enrichment_service
     from .alerts.router import router as alerts_router
     from .alerts.service import AlertService, get_alert_service
     from .baselines import providers as baseline_providers
@@ -962,6 +988,13 @@ def wire_pro(app, db_path: Optional[Path] = None) -> None:
     report_provider = LiveReportDataProvider(posture_service, engine, db_path)
 
     alert_service = AlertService(db_path=db_path)
+    enrichment_service = EnrichmentService(
+        db_path=db_path,
+        # The threat engine owns the ThreatStore; hand it to enrichment so
+        # auto-tags land on the threat rows. Absent (minimal test wiring)
+        # enrichment still runs, it just doesn't persist onto threats.
+        threat_store=getattr(getattr(app.state, "threat_engine", None), "store", None),
+    )
     baseline_service = BaselineService(db_path=db_path)
     baseline_monitor = BaselineMonitor(
         baseline_service,
@@ -979,10 +1012,12 @@ def wire_pro(app, db_path: Optional[Path] = None) -> None:
     app.dependency_overrides[lanscan_providers.get_interface_provider] = lambda: interface_provider
     app.dependency_overrides[get_report_provider] = lambda: report_provider
     app.dependency_overrides[get_alert_service] = lambda: alert_service
+    app.dependency_overrides[get_enrichment_service] = lambda: enrichment_service
     app.dependency_overrides[get_baseline_service] = lambda: baseline_service
     app.dependency_overrides[get_baseline_monitor] = lambda: baseline_monitor
 
     app.state.alert_service = alert_service
+    app.state.enrichment_service = enrichment_service
     app.state.baseline_service = baseline_service
     app.state.baseline_monitor = baseline_monitor
     app.state.report_provider = report_provider
@@ -991,7 +1026,7 @@ def wire_pro(app, db_path: Optional[Path] = None) -> None:
     # the alerting feature is configurable, testable, and permanently silent.
     scheduler = getattr(app.state, "threat_scheduler", None)
     if scheduler is not None:
-        scheduler.alert_dispatcher = ThreatAlertDispatcher(alert_service)
+        scheduler.alert_dispatcher = ThreatAlertDispatcher(alert_service, enrichment_service=enrichment_service)
 
     app.include_router(pcap_router)
     app.include_router(export_router)

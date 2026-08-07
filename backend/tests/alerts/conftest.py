@@ -23,8 +23,8 @@ class FakeTransport:
         self.calls = []
         self._responses = list(responses) if responses else [WebhookResult(ok=True, status_code=200, detail="HTTP 200")]
 
-    def send(self, *, ip, port, host, path, body, headers, timeout):
-        self.calls.append({"ip": ip, "port": port, "host": host, "path": path, "body": body, "headers": headers, "timeout": timeout})
+    def send(self, *, ip, port, host, path, method="POST", body, headers, timeout):
+        self.calls.append({"ip": ip, "port": port, "host": host, "path": path, "method": method, "body": body, "headers": headers, "timeout": timeout})
         if len(self._responses) > 1:
             return self._responses.pop(0)
         return self._responses[0]

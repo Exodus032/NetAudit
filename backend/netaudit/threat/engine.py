@@ -344,4 +344,6 @@ def _row_to_threat_dict(row: dict) -> dict:
         "false_positive_notes": row["false_positive_notes"],
         "recommended_actions": row["recommended_actions"],
         "acknowledged_note": row.get("acknowledged_note"),
+        "tags": row.get("tags") or [],
+        "enrichment": row.get("enrichment") or {},
     }

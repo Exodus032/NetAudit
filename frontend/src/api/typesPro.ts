@@ -371,3 +371,46 @@ export interface AlertHistoryItem {
 export interface AlertHistoryResponse {
   alerts: AlertHistoryItem[];
 }
+
+export type EnrichmentProviderId = "abuseipdb" | "virustotal";
+
+/** One reputation provider as the API reports it: the key is never echoed
+ * back, `has_key` is the only key fact the client gets. */
+export interface EnrichmentProvider {
+  id: EnrichmentProviderId;
+  enabled: boolean;
+  has_key: boolean;
+  last_status?: string | null;
+  last_attempt?: string | null;
+}
+
+/** Accepted by PUT. `api_key` replaces the stored key when provided;
+ * `clear_key` drops it explicitly; neither set means the stored key is
+ * kept. */
+export interface EnrichmentProviderUpdate {
+  id: EnrichmentProviderId;
+  enabled: boolean;
+  api_key?: string | null;
+  clear_key?: boolean;
+}
+
+export interface EnrichmentConfig {
+  enabled: boolean;
+  min_severity: Severity;
+  cache_ttl_hours: number;
+  providers: EnrichmentProvider[];
+}
+
+export interface EnrichmentConfigUpdate {
+  enabled: boolean;
+  min_severity: Severity;
+  cache_ttl_hours: number;
+  providers: EnrichmentProviderUpdate[];
+}
+
+export interface EnrichmentTestResult {
+  provider_id: EnrichmentProviderId;
+  status: AlertChannelStatus;
+  detail?: string | null;
+  attempted_at: string;
+}

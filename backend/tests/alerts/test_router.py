@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from netaudit.alerts.desktop import DesktopResult
+from netaudit.alerts.enrichment import EnrichmentService, get_enrichment_service
 from netaudit.alerts.providers import get_desktop_sender, get_webhook_transport
 from netaudit.alerts.router import router
 from netaudit.alerts.service import AlertService, get_alert_service
@@ -16,6 +17,7 @@ def make_client(db_path, desktop_status="delivered"):
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_alert_service] = lambda: AlertService(db_path=db_path)
+    app.dependency_overrides[get_enrichment_service] = lambda: EnrichmentService(db_path=db_path)
     app.dependency_overrides[get_webhook_transport] = lambda: FakeTransport()
     app.dependency_overrides[get_desktop_sender] = lambda: FakeDesktopSender(status=desktop_status)
     return TestClient(app)

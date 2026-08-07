@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { useAlertsConfig, useAlertsHistory, useAlertTest } from "../../../hooks/useAlerts";
+import { useAlertsConfig, useAlertsHistory, useAlertTest, useEnrichmentConfig, useEnrichmentTest } from "../../../hooks/useAlerts";
 import { ErrorState, EmptyState, SkeletonRows } from "../../../components/common/States";
 import { formatDateTime } from "../../../lib/format";
-import type { AlertChannel, AlertsConfig } from "../../../api/typesPro";
+import type { AlertChannel, AlertsConfig, EnrichmentConfig, EnrichmentProviderUpdate } from "../../../api/typesPro";
 import type { Severity } from "../../../api/types";
 import "../../../components/pro/pro-common.css";
 import "./AlertsView.css";
@@ -21,9 +21,21 @@ export function AlertsView() {
   const { config, loading, error, saving, saveError, save } = useAlertsConfig();
   const { pending, results, test } = useAlertTest();
   const { history, loading: historyLoading, error: historyError } = useAlertsHistory();
+  const {
+    config: enrichConfig,
+    loading: enrichLoading,
+    error: enrichError,
+    saving: enrichSaving,
+    saveError: enrichSaveError,
+    save: saveEnrich,
+  } = useEnrichmentConfig();
+  const { pending: enrichPending, results: enrichTestResults, test: testEnrich } = useEnrichmentTest();
 
   const [draft, setDraft] = useState<AlertsConfig | null>(null);
   const [testErrors, setTestErrors] = useState<Record<string, string>>({});
+  const [enrichDraft, setEnrichDraft] = useState<EnrichmentConfig | null>(null);
+  const [keyDrafts, setKeyDrafts] = useState<Record<string, string>>({});
+  const [enrichTestErrors, setEnrichTestErrors] = useState<Record<string, string>>({});
 
   const handleTest = (id: string) => {
     setTestErrors((cur) => {
@@ -39,6 +51,10 @@ export function AlertsView() {
   useEffect(() => {
     if (config) setDraft(config);
   }, [config]);
+
+  useEffect(() => {
+    if (enrichConfig) setEnrichDraft(enrichConfig);
+  }, [enrichConfig]);
 
   if (loading || !draft) {
     return (
@@ -68,6 +84,42 @@ export function AlertsView() {
     if (draft) void save(draft);
   };
 
+  const updateEnrichProvider = (id: string, patch: Partial<EnrichmentConfig["providers"][number]>) => {
+    setEnrichDraft((cur) => cur && { ...cur, providers: cur.providers.map((p) => (p.id === id ? { ...p, ...patch } : p)) });
+  };
+
+  const handleEnrichTest = (id: string) => {
+    setEnrichTestErrors((cur) => {
+      const next = { ...cur };
+      delete next[id];
+      return next;
+    });
+    testEnrich(id).catch((err) => {
+      setEnrichTestErrors((cur) => ({ ...cur, [id]: err instanceof Error ? err.message : String(err) }));
+    });
+  };
+
+  const handleEnrichSave = () => {
+    if (!enrichDraft) return;
+    const providers: EnrichmentProviderUpdate[] = enrichDraft.providers.map((p) => {
+      const typed = keyDrafts[p.id] ?? "";
+      return {
+        id: p.id,
+        enabled: p.enabled,
+        // An empty field on a provider that already has a key means "clear
+        // it"; otherwise null means "keep whatever is stored".
+        api_key: typed ? typed : null,
+        clear_key: typed === "" && p.has_key,
+      };
+    });
+    void saveEnrich({
+      enabled: enrichDraft.enabled,
+      min_severity: enrichDraft.min_severity,
+      cache_ttl_hours: enrichDraft.cache_ttl_hours,
+      providers,
+    });
+  };
+
   return (
     <div>
       {error && <ErrorState title="Couldn't load alert configuration" detail={error} />}
@@ -80,9 +132,11 @@ export function AlertsView() {
         <div className="pro-notice">
           <span className="pro-notice-icon" aria-hidden="true">🛡</span>
           <div>
-            A webhook URL (generic or Slack) is the only outbound network destination NetAudit will ever contact, and
-            only after you enable it here. It must be <code className="mono">https</code>, and every send is re-validated
-            against private/loopback address ranges — including DNS rebinding, at send time, not just when you save.
+            Alert webhooks (generic or Slack) and IP reputation enrichment (AbuseIPDB/VirusTotal, below) are the only
+            outbound network destinations NetAudit will ever contact, and only after you enable them here. Webhook URLs
+            must be <code className="mono">https</code> and every send is re-validated against private/loopback address
+            ranges — including DNS rebinding, at send time, not just when you save. Enrichment sends only public IPs,
+            never internal addresses, and only when a provider is enabled with your own key.
           </div>
         </div>
 
@@ -188,6 +242,109 @@ export function AlertsView() {
             </button>
           </div>
         </div>
+      </section>
+
+      <section className="view-section">
+        <div className="view-section-header">
+          <span className="view-section-title">IP enrichment</span>
+        </div>
+
+        {enrichError && <ErrorState title="Couldn't load enrichment config" detail={enrichError} />}
+
+        {enrichLoading || !enrichDraft ? (
+          <div className="panel">
+            <SkeletonRows rows={3} height={30} />
+          </div>
+        ) : (
+          <div className="panel alerts-config-panel">
+            <div className="pro-form-grid">
+              <label className="pro-checkbox alerts-enable-toggle">
+                <input
+                  type="checkbox"
+                  checked={enrichDraft.enabled}
+                  onChange={(e) => setEnrichDraft({ ...enrichDraft, enabled: e.target.checked })}
+                />
+                Enrichment enabled
+              </label>
+              <div className="pro-field">
+                <label className="pro-field-label" htmlFor="enrich-min-sev">Minimum severity</label>
+                <select
+                  id="enrich-min-sev"
+                  className="pro-select"
+                  value={enrichDraft.min_severity}
+                  onChange={(e) => setEnrichDraft({ ...enrichDraft, min_severity: e.target.value as Severity })}
+                >
+                  {SEVERITIES.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="pro-field">
+                <label className="pro-field-label" htmlFor="enrich-ttl">Cache TTL (hours)</label>
+                <input
+                  id="enrich-ttl"
+                  className="pro-input"
+                  type="number"
+                  min={1}
+                  value={enrichDraft.cache_ttl_hours}
+                  onChange={(e) => setEnrichDraft({ ...enrichDraft, cache_ttl_hours: Number(e.target.value) })}
+                />
+              </div>
+            </div>
+
+            <div className="pro-list">
+              {enrichDraft.providers.map((p) => {
+                const testResult = enrichTestResults[p.id];
+                return (
+                  <div key={p.id} className="pro-card alerts-channel-card">
+                    <div className="pro-card-main">
+                      <div className="pro-card-title">
+                        {p.id === "abuseipdb" ? "AbuseIPDB" : "VirusTotal"}
+                        {p.last_status && <span className={`alerts-last-status alerts-status-${p.last_status}`}>{p.last_status}</span>}
+                      </div>
+                      <input
+                        type="password"
+                        className="pro-input alerts-webhook-url"
+                        placeholder={p.has_key ? "API key stored — type to replace" : "Paste your own API key"}
+                        value={keyDrafts[p.id] ?? ""}
+                        onChange={(e) => setKeyDrafts((cur) => ({ ...cur, [p.id]: e.target.value }))}
+                        autoComplete="off"
+                      />
+                      <div className="pro-card-meta">
+                        {p.has_key && <span>Key saved</span>}
+                        {p.last_attempt && <span>Last attempt {formatDateTime(p.last_attempt)}</span>}
+                        {testResult && <span>Test: {testResult.status}{testResult.detail ? ` — ${testResult.detail}` : ""}</span>}
+                        {enrichTestErrors[p.id] && <span className="pro-inline-error">Test failed: {enrichTestErrors[p.id]}</span>}
+                      </div>
+                    </div>
+                    <div className="pro-card-actions">
+                      <label className="pro-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={p.enabled}
+                          onChange={(e) => updateEnrichProvider(p.id, { enabled: e.target.checked })}
+                        />
+                        Enabled
+                      </label>
+                      <button className="pro-btn" onClick={() => handleEnrichTest(p.id)} disabled={enrichPending === p.id}>
+                        {enrichPending === p.id ? "Testing…" : "Test key"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="pro-section-actions">
+              <span className="pro-muted">Sends only public IPs to the providers you enable. Off until you save.</span>
+              <span className="pro-spacer" />
+              {enrichSaveError && <span className="pro-inline-error">{enrichSaveError}</span>}
+              <button className="pro-btn pro-btn-primary" onClick={handleEnrichSave} disabled={enrichSaving}>
+                {enrichSaving ? "Saving…" : "Save enrichment"}
+              </button>
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="view-section">

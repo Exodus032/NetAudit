@@ -10,6 +10,9 @@ import { ApiError, fetchWithToken, isMockForced, qs, withFallback, getTrafficLog
 import { ensureToken, invalidateToken } from "./auth";
 import {
   mockAlertsHistory,
+  mockGetEnrichmentConfig,
+  mockUpdateEnrichmentConfig,
+  mockTestEnrichmentProvider,
   mockCancelLanScan,
   mockComplianceFrameworks,
   mockComplianceReport,
@@ -40,6 +43,9 @@ import type {
   AlertHistoryResponse,
   AlertsConfig,
   AlertTestResult,
+  EnrichmentConfig,
+  EnrichmentConfigUpdate,
+  EnrichmentTestResult,
   BaselineDiff,
   BaselineSchedule,
   BaselineListItem,
@@ -425,6 +431,30 @@ export function testAlertChannel(channelId: string): Promise<AlertTestResult> {
 
 export function getAlertsHistory(limit = 200): Promise<AlertHistoryResponse> {
   return withFallback(`/api/alerts/history${qs({ limit })}`, undefined, () => mockAlertsHistory(limit));
+}
+
+// =======================================================================
+// F5: IP reputation enrichment (AbuseIPDB / VirusTotal)
+// =======================================================================
+
+export function getEnrichmentConfig(): Promise<EnrichmentConfig> {
+  return withFallback("/api/alerts/enrichment", undefined, mockGetEnrichmentConfig);
+}
+
+export function updateEnrichmentConfig(config: EnrichmentConfigUpdate): Promise<EnrichmentConfig> {
+  return withFallback(
+    "/api/alerts/enrichment",
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(config) },
+    () => mockUpdateEnrichmentConfig(config),
+  );
+}
+
+export function testEnrichmentProvider(providerId: string): Promise<EnrichmentTestResult> {
+  return withFallback(
+    "/api/alerts/enrichment/test",
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider_id: providerId }) },
+    () => mockTestEnrichmentProvider(providerId),
+  );
 }
 
 export { ApiError, BpfFilterError };

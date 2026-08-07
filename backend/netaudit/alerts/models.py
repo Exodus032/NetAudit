@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 Severity = Literal["critical", "high", "medium", "low", "info"]
 ChannelKind = Literal["desktop", "webhook", "slack"]
 ChannelStatus = Literal["delivered", "failed", "unavailable", "rate_limited", "suppressed"]
+EnrichmentProviderId = Literal["abuseipdb", "virustotal"]
 
 SEVERITY_ORDER: dict[str, int] = {"info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
 
@@ -92,6 +93,70 @@ class AlertHistoryItem(BaseModel):
 class AlertHistoryResponse(BaseModel):
     model_config = _model()
     alerts: list[AlertHistoryItem] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# IP reputation enrichment (AbuseIPDB / VirusTotal)
+# ---------------------------------------------------------------------------
+
+
+class EnrichmentProvider(BaseModel):
+    """One reputation provider as seen by the client. The API key is never
+    echoed back -- `has_key` is the only key-related fact the client gets."""
+
+    model_config = _model()
+    id: EnrichmentProviderId
+    enabled: bool = False
+    has_key: bool = False
+    last_status: Optional[str] = None
+    last_attempt: Optional[str] = None
+
+
+class EnrichmentProviderUpdate(BaseModel):
+    """Accepted by `PUT /api/alerts/enrichment`. `api_key` replaces the
+    stored key when provided; `clear_key` drops it explicitly. Neither set
+    means the stored key is kept as-is. `id` is a plain str (not the
+    Literal) so an unknown provider id is rejected by the service with a
+    400 and a useful message, not by pydantic with a 422."""
+
+    model_config = _model()
+    id: str
+    enabled: bool = False
+    api_key: Optional[str] = None
+    clear_key: bool = False
+
+
+class EnrichmentConfig(BaseModel):
+    """Body of `GET`/`PUT /api/alerts/enrichment`."""
+
+    model_config = _model()
+    enabled: bool = False
+    min_severity: Severity = "medium"
+    cache_ttl_hours: int = 24
+    providers: list[EnrichmentProvider] = Field(default_factory=list)
+
+
+class EnrichmentConfigUpdate(BaseModel):
+    """Body accepted by `PUT /api/alerts/enrichment`."""
+
+    model_config = _model()
+    enabled: bool = False
+    min_severity: Severity = "medium"
+    cache_ttl_hours: int = 24
+    providers: list[EnrichmentProviderUpdate] = Field(default_factory=list)
+
+
+class EnrichmentTestRequest(BaseModel):
+    model_config = _model()
+    provider_id: str
+
+
+class EnrichmentTestResult(BaseModel):
+    model_config = _model()
+    provider_id: EnrichmentProviderId
+    status: ChannelStatus
+    detail: Optional[str] = None
+    attempted_at: str
 
 
 class ErrorBody(BaseModel):

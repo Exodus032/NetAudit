@@ -25,6 +25,8 @@ interface ThreatSpec {
   false_positive_notes: string;
   recommended_actions: Threat["recommended_actions"];
   related_log_ids?: number[];
+  tags?: string[];
+  enrichment?: Threat["enrichment"];
 }
 
 const SPECS: ThreatSpec[] = [
@@ -47,6 +49,13 @@ const SPECS: ThreatSpec[] = [
     ],
     indicators: [{ type: "ip", value: "45.83.64.11", context: "beacon destination" }, { type: "port", value: "3333/tcp", context: "stratum-like port" }],
     metrics: { interval_seconds: 60.2, cv: 0.04, contacts: 41, bytes_total: 30_180 },
+    tags: ["abuseipdb-malicious", "tor-exit", "vt-malicious"],
+    enrichment: {
+      "45.83.64.11": {
+        abuseipdb: { abuse_confidence_score: 94, is_tor: true, country_code: "NL" },
+        virustotal: { reputation: -8, last_analysis_stats: { malicious: 3, suspicious: 1, harmless: 80, undetected: 14 } },
+      },
+    },
     ageMs: 24 * 60_000,
     occurrences: 41,
     false_positive_notes: "Software update checks, telemetry agents, and some game clients also beacon on fixed intervals. Confirm what node.exe is actually running (a legitimate long-running Node service vs. something dropped into a temp/user directory) before assuming malicious intent.",
@@ -326,5 +335,7 @@ export function buildThreats(): Threat[] {
     related_log_ids: s.related_log_ids ?? [],
     false_positive_notes: s.false_positive_notes,
     recommended_actions: s.recommended_actions,
+    tags: s.tags,
+    enrichment: s.enrichment,
   }));
 }

@@ -92,7 +92,9 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             related_log_ids TEXT NOT NULL DEFAULT '[]',
             false_positive_notes TEXT NOT NULL DEFAULT '',
             recommended_actions TEXT NOT NULL DEFAULT '[]',
-            acknowledged_note TEXT
+            acknowledged_note TEXT,
+            tags TEXT NOT NULL DEFAULT '[]',
+            enrichment TEXT NOT NULL DEFAULT '{}'
         );
         CREATE INDEX IF NOT EXISTS idx_threats_last_seen ON threats(last_seen_epoch);
         CREATE INDEX IF NOT EXISTS idx_threats_detector ON threats(detector_id);
@@ -118,6 +120,13 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         );
         """
     )
+    # Migrate databases created before the enrichment feature: `CREATE
+    # TABLE IF NOT EXISTS` won't add columns to an existing table.
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(threats)").fetchall()}
+    if "tags" not in cols:
+        conn.execute("ALTER TABLE threats ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'")
+    if "enrichment" not in cols:
+        conn.execute("ALTER TABLE threats ADD COLUMN enrichment TEXT NOT NULL DEFAULT '{}'")
 
 
 def reset_for_tests(db_path: Path) -> None:
@@ -175,6 +184,14 @@ class ThreatStore:
 
     def set_status(self, threat_id: str, status: str) -> None:
         self._conn().execute("UPDATE threats SET status=? WHERE id=?", (status, threat_id))
+
+    def set_threat_enrichment(self, threat_id: str, *, tags: list[str], enrichment: dict) -> None:
+        """Persists reputation auto-tags and the enrichment results for a
+        threat's IP indicators (written by the alerts enrichment service)."""
+        self._conn().execute(
+            "UPDATE threats SET tags=?, enrichment=? WHERE id=?",
+            (json.dumps(tags), json.dumps(enrichment), threat_id),
+        )
 
     def set_acknowledged(self, threat_id: str, acknowledged: bool, note: Optional[str]) -> Optional[dict]:
         conn = self._conn()
@@ -291,7 +308,7 @@ class ThreatStore:
         conn.execute("DELETE FROM detector_settings")
 
 
-_JSON_COLUMNS = {"mitre", "evidence", "indicators", "metrics", "related_connection_ids", "related_log_ids", "recommended_actions"}
+_JSON_COLUMNS = {"mitre", "evidence", "indicators", "metrics", "related_connection_ids", "related_log_ids", "recommended_actions", "tags", "enrichment"}
 
 
 def _row_to_dict(row: sqlite3.Row) -> dict:

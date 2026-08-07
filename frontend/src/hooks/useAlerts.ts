@@ -2,9 +2,24 @@
 // history.
 
 import { useCallback, useEffect, useState } from "react";
-import { getAlertsConfig, getAlertsHistory, testAlertChannel, updateAlertsConfig } from "../api/clientPro";
+import {
+  getAlertsConfig,
+  getAlertsHistory,
+  getEnrichmentConfig,
+  testAlertChannel,
+  testEnrichmentProvider,
+  updateAlertsConfig,
+  updateEnrichmentConfig,
+} from "../api/clientPro";
 import { ApiError } from "../api/client";
-import type { AlertHistoryItem, AlertsConfig, AlertTestResult } from "../api/typesPro";
+import type {
+  AlertHistoryItem,
+  AlertsConfig,
+  AlertTestResult,
+  EnrichmentConfig,
+  EnrichmentConfigUpdate,
+  EnrichmentTestResult,
+} from "../api/typesPro";
 
 function errMessage(err: unknown): string {
   if (err instanceof ApiError) return err.message;
@@ -61,6 +76,62 @@ export function useAlertTest() {
       return res;
     } finally {
       setPending((cur) => (cur === channelId ? null : cur));
+    }
+  }, []);
+
+  return { pending, results, test };
+}
+
+export function useEnrichmentConfig() {
+  const [config, setConfig] = useState<EnrichmentConfig | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const reload = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    return getEnrichmentConfig()
+      .then(setConfig)
+      .catch((err) => setError(errMessage(err)))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  const save = useCallback(async (next: EnrichmentConfigUpdate) => {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const res = await updateEnrichmentConfig(next);
+      setConfig(res);
+      return res;
+    } catch (err) {
+      setSaveError(errMessage(err));
+      throw err;
+    } finally {
+      setSaving(false);
+    }
+  }, []);
+
+  return { config, loading, error, saving, saveError, save, reload, setConfig };
+}
+
+export function useEnrichmentTest() {
+  const [pending, setPending] = useState<string | null>(null);
+  const [results, setResults] = useState<Record<string, EnrichmentTestResult>>({});
+
+  const test = useCallback(async (providerId: string) => {
+    setPending(providerId);
+    try {
+      const res = await testEnrichmentProvider(providerId);
+      setResults((cur) => ({ ...cur, [providerId]: res }));
+      return res;
+    } finally {
+      setPending((cur) => (cur === providerId ? null : cur));
     }
   }, []);
 

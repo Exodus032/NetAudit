@@ -14,8 +14,10 @@ Two hard rules inherited from v2 and extended to everything here:
    the user copies. The one exception is Part E's active port scan, which is
    opt-in, rate-limited, restricted to the local subnet, and described below.
 2. **No outbound network requests except those the user explicitly triggers.**
-   Alert webhooks (Part F) are user-configured and user-enabled. Nothing phones
-   home, no feed downloads, no telemetry.
+   Alert webhooks (Part F) are user-configured and user-enabled. IP reputation
+   enrichment (Part F5) is the same: user-configured, user-enabled, sends only
+   public IPs (never internal addresses), and uses the user's own API keys.
+   Nothing phones home, no feed downloads, no telemetry.
 
 ---
 
@@ -477,3 +479,51 @@ result. `GET /api/alerts/history` lists what was sent.
   ]
 }
 ```
+
+## F5. IP reputation enrichment — `GET`/`PUT /api/alerts/enrichment`
+
+Additive extension (per the file's additive-extension convention): looks up
+threat IP indicators against AbuseIPDB/VirusTotal using the user's own API
+keys and auto-tags threat rows. Off by default; an enabled provider without
+a key is rejected; only public IPs are ever sent (RFC1918, loopback,
+link-local, CGNAT and friends are filtered before any request); all requests
+go through the same https-only, fresh-resolved outbound path as alert
+webhooks (Part F3). The API key is never echoed back, only `has_key`.
+
+```json
+{
+  "enabled": false,
+  "min_severity": "medium",
+  "cache_ttl_hours": 24,
+  "providers": [
+    {"id": "abuseipdb", "enabled": false, "has_key": false, "last_status": null, "last_attempt": null},
+    {"id": "virustotal", "enabled": false, "has_key": false, "last_status": null, "last_attempt": null}
+  ]
+}
+```
+
+`PUT` accepts the same shape with `{id, enabled, api_key, clear_key}` per
+provider: `api_key` replaces the stored key, `api_key: null` keeps it,
+`clear_key: true` drops it. Rejections are 400s: `missing_key`,
+`unknown_provider`, `duplicate_provider`, `bad_cache_ttl`.
+
+### F5.1 `POST /api/alerts/enrichment/test`
+
+One lookup of a benign public IP (`1.1.1.1`) to verify a key, bypassing
+`enabled`/quotas like `POST /api/alerts/test` bypasses the dispatch filters:
+
+```json
+{"provider_id": "abuseipdb"}
+```
+
+```json
+{"provider_id": "abuseipdb", "status": "delivered", "detail": "HTTP 200", "attempted_at": "2026-08-07T14:03:11.482Z"}
+```
+
+### F5.2 Auto-tags and enrichment on threat rows
+
+`GET /api/threats` and `GET /api/threats/{id}` rows gain two additive
+fields when enrichment has run: `tags` (`["abuseipdb-malicious",
+"tor-exit", "vt-malicious"]`) and `enrichment` (`{ip: {provider_id:
+{...}}}}`). Webhook/Slack alert payloads for a newly detected threat may
+carry an additive `enrichment` block with the same data when it exists.
